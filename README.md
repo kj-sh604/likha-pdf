@@ -1,6 +1,6 @@
 # likha-pdf
 
-a simple web app that converts markdown to pdf using pandoc and lualatex.
+a simple and crappy web app that converts markdown to pdf using pandoc and lualatex.
 
 ## features
 
