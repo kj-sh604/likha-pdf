@@ -1,12 +1,10 @@
 FROM ubuntu:24.04
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
+    nim \
+    build-essential \
     pandoc \
     texlive-full \
     fonts-noto-color-emoji \
@@ -14,13 +12,12 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY src/requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
-
 COPY src/ .
+
+RUN nim c -d:release --opt:size -o:likha-pdf app.nim
 
 RUN mkdir -p generated uploads
 
 EXPOSE 5000
 
-CMD ["python3", "app.py"]
+CMD ["./likha-pdf"]
