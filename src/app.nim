@@ -1,5 +1,7 @@
 import std/[asynchttpserver, asyncdispatch, os, osproc, streams, strutils, tables, times, uri, random]
 
+# tiny backend in nimlang, may be stupid, but this was fun
+
 const
   AllowedImageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "svg"]
   ValidPaperSizes = ["a4paper", "letterpaper", "legalpaper"]
@@ -35,6 +37,7 @@ type MultipartPart = object
   contentType: string
   content: string
 
+# helpers
 proc htmlEscape(value: string): string =
   result = value
   result = result.replace("&", "&amp;")
@@ -73,6 +76,7 @@ proc parseUrlEncoded(body: string): Table[string, string] =
       let value = decodeFormComponent(pair[separator + 1 .. ^1])
       result[key] = value
 
+# "options" are optional, defaults are forever.
 proc pickOption(value: string; fallback: string; options: openArray[string]): string =
   for option in options:
     if option == value:
@@ -126,6 +130,7 @@ proc stripTrailingCrlf(value: string): string =
   if result.len >= 2 and result.endsWith("\r\n"):
     result.setLen(result.len - 2)
 
+# hand-rolled multipart parsing, yes i am aware that this is "eh"
 proc parseMultipart(body: string; boundary: string): seq[MultipartPart] =
   let delimiter = "--" & boundary
   for rawChunk in body.split(delimiter):
@@ -202,6 +207,7 @@ proc fileContentType(filePath: string): string =
     return "application/pdf"
   "application/octet-stream"
 
+# response wrappers
 proc respondHtml(req: Request; code: HttpCode; content: string) {.async.} =
   let headers = newHttpHeaders({"Content-Type": "text/html; charset=utf-8"})
   await req.respond(code, content, headers)
@@ -222,6 +228,7 @@ proc respondFile(req: Request; filePath: string; asAttachment: bool = false; att
 
   await req.respond(Http200, readFile(filePath), headers)
 
+# pandoc does the heavy lifting
 proc runPandoc(sourceMarkdown: string; outputPath: string; paperSize: string; margin: string; mainFont: string): tuple[ok: bool, output: string, missingPandoc: bool] =
   let tempDir = getTempDir() / (AppName & "-" & randomHex(10))
   createDir(tempDir)
@@ -264,7 +271,8 @@ proc runPandoc(sourceMarkdown: string; outputPath: string; paperSize: string; ma
     except OSError:
       discard
 
-proc handleConvert(req: Request) {.async, gcsafe.} =
+# app endpoint: strict inputs, loud errors.
+proc handleConvert(req: Request) {.async.} =
   let formData = parseUrlEncoded(req.body)
   let markdown = formData.getOrDefault("markdown", "").strip()
 
@@ -308,7 +316,8 @@ proc handleConvert(req: Request) {.async, gcsafe.} =
   )
   await respondHtml(req, Http200, html)
 
-proc handleUploadImage(req: Request) {.async, gcsafe.} =
+# upload endpoint. accepts image, returns markdown snippet
+proc handleUploadImage(req: Request) {.async.} =
   let contentType = req.headers.getOrDefault("Content-Type")
   let boundary = extractBoundary(contentType)
 
@@ -357,7 +366,8 @@ proc handleUploadImage(req: Request) {.async, gcsafe.} =
   )
   await respondHtml(req, Http200, html)
 
-proc route(req: Request) {.async, gcsafe.} =
+# router table
+proc route(req: Request) {.async.} =
   let path = req.url.path
 
   if req.reqMethod == HttpGet and path == "/":
@@ -398,6 +408,7 @@ proc route(req: Request) {.async, gcsafe.} =
 
   await respondText(req, Http404, "Not found")
 
+# server boot, then we let htmx do htmx things.
 when isMainModule:
   randomize()
 
@@ -408,8 +419,4 @@ when isMainModule:
 
   let server = newAsyncHttpServer()
   echo "listening on http://localhost:5000"
-  waitFor server.serve(
-    Port(5000),
-    proc (req: Request): Future[void] {.async, gcsafe, closure.} =
-      await route(req)
-  )
+  waitFor server.serve(Port(5000), route)
