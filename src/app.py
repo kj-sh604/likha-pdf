@@ -7,14 +7,19 @@ import uuid
 from pathlib import Path
 
 from flask import Flask, render_template, request, send_from_directory, url_for
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 GENERATED_DIR = BASE_DIR / "generated"
+UPLOADS_DIR = BASE_DIR / "uploads"
 LATEX_TEMPLATE = BASE_DIR / "latex" / "template.tex"
 
 GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "svg"}
 
 PAPER_SIZES = {
     "a4paper": "A4",
@@ -41,6 +46,13 @@ def _pick(options: dict[str, str], key: str, default_key: str) -> str:
     return default_key
 
 
+def _is_allowed_image(filename: str) -> bool:
+    if "." not in filename:
+        return False
+    extension = filename.rsplit(".", 1)[1].lower()
+    return extension in ALLOWED_IMAGE_EXTENSIONS
+
+
 @app.get("/")
 def index():
     return render_template(
@@ -65,7 +77,7 @@ def convert_markdown():
 
     epoch = int(time.time())
     unique_id = uuid.uuid4().hex
-    output_name = f"document_{epoch}_{unique_id}.pdf"
+    output_name = f"likha-pdf_{epoch}_{unique_id}.pdf"
     output_path = GENERATED_DIR / output_name
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -86,6 +98,8 @@ def convert_markdown():
             f"margin={margin_key}",
             "-V",
             f"mainfont={MAIN_FONTS[main_family_key]}",
+            "--resource-path",
+            f"{BASE_DIR}:{UPLOADS_DIR}:{tmp_dir}",
             "-o",
             str(output_path),
         ]
@@ -110,6 +124,37 @@ def convert_markdown():
         download_url=url_for("download_pdf", filename=output_name),
         filename=output_name,
     )
+
+
+@app.post("/upload-image")
+def upload_image():
+    image = request.files.get("image")
+    if image is None or image.filename is None or not image.filename.strip():
+        return render_template("partials/upload_error.html", message="image file is required."), 400
+
+    original_name = secure_filename(image.filename)
+    if not original_name or not _is_allowed_image(original_name):
+        return render_template("partials/upload_error.html", message="unsupported image type."), 400
+
+    extension = original_name.rsplit(".", 1)[1].lower()
+    epoch = int(time.time())
+    unique_id = uuid.uuid4().hex
+    stored_name = f"img_{epoch}_{unique_id}.{extension}"
+    image_path = UPLOADS_DIR / stored_name
+    image.save(image_path)
+
+    markdown_snippet = f"![]({(Path('uploads') / stored_name).as_posix()})"
+    return render_template(
+        "partials/upload_result.html",
+        filename=stored_name,
+        markdown_snippet=markdown_snippet,
+        preview_url=url_for("uploaded_image", filename=stored_name),
+    )
+
+
+@app.get("/uploads/<path:filename>")
+def uploaded_image(filename: str):
+    return send_from_directory(UPLOADS_DIR, filename)
 
 
 @app.get("/download/<path:filename>")

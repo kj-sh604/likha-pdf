@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Markdown to PDF</title>
+    <title>likha-pdf</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/kj-sh604/noir.css@latest/out/noir.min.css" />
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <style>
@@ -19,16 +19,35 @@
   </head>
   <body>
     <main>
-      <h1>markdown → pdf</h1>
+      <h1>likha-pdf</h1>
       <p>simple markdown export with pandoc + lualatex.</p>
 
+      <section>
+        <h3>image upload</h3>
+        <form
+          id="upload-form"
+          hx-post="/upload-image"
+          hx-target="#upload-result"
+          hx-swap="innerHTML"
+          hx-encoding="multipart/form-data"
+          hx-indicator="#uploading"
+        >
+          <label for="image">image file</label>
+          <input id="image" name="image" type="file" accept="image/*" required />
+          <button id="upload-button" type="submit">upload image</button>
+          <small id="uploading" class="htmx-indicator">uploading…</small>
+        </form>
+        <div id="upload-result" aria-live="polite"></div>
+      </section>
+
       <form
+        id="convert-form"
         hx-post="/convert"
         hx-target="#result"
         hx-swap="innerHTML"
         hx-indicator="#loading"
       >
-        <label for="markdown">Markdown</label>
+        <label for="markdown"><strong>textarea</strong></label>
         <textarea
           id="markdown"
           name="markdown"
@@ -66,7 +85,7 @@
         </section>
 
         <button id="convert-button" type="submit">generate pdf</button>
-        <small id="loading" class="htmx-indicator">Converting…</small>
+        <small id="loading" class="htmx-indicator">converting…</small>
       </form>
 
       <section id="result" aria-live="polite"></section>

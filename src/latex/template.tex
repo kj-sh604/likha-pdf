@@ -14,6 +14,8 @@
 \usepackage{microtype}
 \usepackage{parskip}
 \usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{float}
 \usepackage{booktabs}
 \usepackage{longtable}
 \usepackage{array}
@@ -29,12 +31,33 @@
   urlcolor=blue,
   citecolor=black,
   pdfauthor={},
-  pdftitle={Markdown Export}
+  pdftitle={likha-pdf}
 }
 \urlstyle{same}
 
 \setlength{\emergencystretch}{3em}
 \setcounter{secnumdepth}{0}
+\setkeys{Gin}{width=\linewidth,keepaspectratio}
+\makeatletter
+\newsavebox\pandoc@box
+\newcommand*\pandocbounded[1]{%
+  \sbox\pandoc@box{#1}%
+  \Gscale@div\@tempa{\textheight}{\dimexpr\ht\pandoc@box+\dp\pandoc@box\relax}%
+  \Gscale@div\@tempb{\linewidth}{\wd\pandoc@box}%
+  \ifdim\@tempb\p@<\@tempa\p@
+    \scalebox{\@tempb}{\usebox\pandoc@box}%
+  \else
+    \scalebox{\@tempa}{\usebox\pandoc@box}%
+  \fi
+}
+\makeatother
+\let\origfigure\figure
+\let\endorigfigure\endfigure
+\renewenvironment{figure}[1][] {
+    \expandafter\origfigure\expandafter[H]
+} {
+    \endorigfigure
+}
 \providecommand{\tightlist}{
   \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}
 }
