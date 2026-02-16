@@ -1,0 +1,9 @@
+.git
+.gitignore
+README.md
+src/.venv
+src/__pycache__
+src/*.pyc
+src/generated/*
+src/uploads/*
+*.md
