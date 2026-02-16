@@ -61,16 +61,17 @@
 
           <label for="paper_size">Paper size</label>
           <select id="paper_size" name="paper_size">
-            {% for key, label in paper_sizes.items() %}
-            <option value="{{ key }}">{{ label }}</option>
-            {% endfor %}
+            <option value="a4paper">A4</option>
+            <option value="letterpaper">US Letter</option>
+            <option value="legalpaper">US Legal</option>
           </select>
 
           <label for="margin">Margins</label>
           <select id="margin" name="margin">
-            {% for key, label in margins.items() %}
-            <option value="{{ key }}" {% if key == "1in" %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
+            <option value="0.75in">Narrow (0.75in)</option>
+            <option value="1in" selected>Normal (1in)</option>
+            <option value="1.25in">Comfort (1.25in)</option>
+            <option value="1.5in">Wide (1.5in)</option>
           </select>
 
           <fieldset>
@@ -91,6 +92,6 @@
       <section id="result" aria-live="polite"></section>
     </main>
 
-    <script src="{{ url_for('static', filename='main.js') }}"></script>
+    <script src="/static/main.js"></script>
   </body>
 </html>
