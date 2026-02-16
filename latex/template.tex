@@ -1,0 +1,55 @@
+\documentclass[11pt]{article}
+
+\usepackage{fontspec}
+\newfontfamily{\emojifont}{Noto Color Emoji}[Renderer=HarfBuzz]
+\directlua{
+  luaotfload.add_fallback("emojifallback", {
+    "Noto Color Emoji:mode=harf;"
+  })
+}
+\setmainfont{$mainfont$}[RawFeature={fallback=emojifallback}]
+\setmonofont{Latin Modern Mono}
+
+\usepackage[paper=$papersize$,margin=$margin$]{geometry}
+\usepackage{microtype}
+\usepackage{parskip}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{calc}
+\usepackage{etoolbox}
+\usepackage{fancyvrb}
+\usepackage{fvextra}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue,
+  citecolor=black,
+  pdfauthor={},
+  pdftitle={Markdown Export}
+}
+\urlstyle{same}
+
+\setlength{\emergencystretch}{3em}
+\setcounter{secnumdepth}{0}
+\providecommand{\tightlist}{
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}
+}
+
+$if(highlighting-macros)$
+$highlighting-macros$
+$endif$
+
+\begin{document}
+
+$if(title)$
+{\huge\bfseries $title$\par}
+\vspace{1em}
+$endif$
+
+$body$
+
+\end{document}

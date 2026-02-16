@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Markdown to PDF</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/kj-sh604/noir.css@latest/out/noir.min.css" />
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <style>
+      .htmx-indicator {
+        display: none;
+      }
+
+      .htmx-request .htmx-indicator,
+      .htmx-request.htmx-indicator {
+        display: inline;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>markdown → pdf</h1>
+      <p>simple markdown export with pandoc + lualatex.</p>
+
+      <form
+        hx-post="/convert"
+        hx-target="#result"
+        hx-swap="innerHTML"
+        hx-indicator="#loading"
+      >
+        <label for="markdown">Markdown</label>
+        <textarea
+          id="markdown"
+          name="markdown"
+          rows="16"
+          placeholder="markdown goes here..."
+          required
+        ></textarea>
+
+        <section>
+          <h3>pdf options</h3>
+
+          <label for="paper_size">Paper size</label>
+          <select id="paper_size" name="paper_size">
+            {% for key, label in paper_sizes.items() %}
+            <option value="{{ key }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+
+          <label for="margin">Margins</label>
+          <select id="margin" name="margin">
+            {% for key, label in margins.items() %}
+            <option value="{{ key }}" {% if key == "1in" %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+
+          <fieldset>
+            <legend>main font</legend>
+            <label>
+              <input type="radio" name="main_font" value="serif" checked /> serif
+            </label>
+            <label>
+              <input type="radio" name="main_font" value="sans" /> sans-serif
+            </label>
+          </fieldset>
+        </section>
+
+        <button id="convert-button" type="submit">generate pdf</button>
+        <small id="loading" class="htmx-indicator">Converting…</small>
+      </form>
+
+      <section id="result" aria-live="polite"></section>
+    </main>
+
+    <script src="{{ url_for('static', filename='main.js') }}"></script>
+  </body>
+</html>
