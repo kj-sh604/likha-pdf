@@ -1,6 +1,12 @@
-# no name yet
+# likha-pdf
 
-simple web app that converts markdown to pdf using pandoc and lualatex.
+a simple web app that converts markdown to pdf using pandoc and lualatex.
+
+## features
+
+- markdown to pdf export
+- crappy image upload (but it works)
+- emoji-capable latex template
 
 ## requirements
 
@@ -8,10 +14,17 @@ simple web app that converts markdown to pdf using pandoc and lualatex.
 - pandoc
 - lualatex
 
+## image usage
+
+1. upload an image from the page
+2. click `insert into markdown`
+3. generate pdf
+
 
 ## run
 
 ```bash
+cd src/
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
