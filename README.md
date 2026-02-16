@@ -12,7 +12,7 @@ a simple and crappy web app that converts markdown to pdf using pandoc and luala
 
 ## requirements
 
-- python 3.10+
+- nim 1.6+
 - pandoc
 - lualatex
 
@@ -29,10 +29,8 @@ a simple and crappy web app that converts markdown to pdf using pandoc and luala
 
 ```bash
 cd src/
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python app.py
+nim c -d:release -o:likha-pdf app.nim
+./likha-pdf
 ```
 
 ### docker
