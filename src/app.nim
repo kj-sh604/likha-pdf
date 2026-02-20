@@ -233,13 +233,23 @@ proc runPandoc(sourceMarkdown: string; outputPath: string; paperSize: string; ma
   let tempDir = getTempDir() / (AppName & "-" & randomHex(10))
   createDir(tempDir)
   let tempMarkdownPath = tempDir / "source.md"
+  let tempRawPath = tempDir / "raw.md"
 
   try:
-    writeFile(tempMarkdownPath, sourceMarkdown)
+    # write raw markdown first
+    writeFile(tempRawPath, sourceMarkdown)
+
+    # preprocess markdown: convert to ascii with transliteration and normalize quotes
+    let iconvCmd = "iconv -c -t ASCII//TRANSLIT " & quoteShell(tempRawPath) & " | sed 's/'\\''/'/g; s/\"\"/\"/g' > " & quoteShell(tempMarkdownPath)
+    let (iconvOutput, iconvExitCode) = execCmdEx(iconvCmd)
+
+    if iconvExitCode != 0:
+      # if preprocessing fails, fall back to original content
+      writeFile(tempMarkdownPath, sourceMarkdown)
 
     let args = @[
       tempMarkdownPath,
-      "--from", "markdown+emoji",
+      "--from", "markdown+emoji+hard_line_breaks",
       "--pdf-engine=lualatex",
       "--template", latexTemplatePath(),
       "-V", "papersize=" & paperSize,
@@ -264,6 +274,8 @@ proc runPandoc(sourceMarkdown: string; outputPath: string; paperSize: string; ma
     return (ok: false, output: output, missingPandoc: false)
   finally:
     try:
+      if fileExists(tempRawPath):
+        removeFile(tempRawPath)
       if fileExists(tempMarkdownPath):
         removeFile(tempMarkdownPath)
       if dirExists(tempDir):
