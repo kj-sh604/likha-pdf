@@ -6,6 +6,7 @@ const
   AllowedImageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "svg"]
   ValidPaperSizes = ["a4paper", "letterpaper", "legalpaper"]
   ValidMargins = ["0.75in", "1in", "1.25in", "1.5in"]
+  ValidLineSpacings = ["1", "1.5", "2"]
 
 const
   AppName = "likha-pdf"
@@ -229,7 +230,7 @@ proc respondFile(req: Request; filePath: string; asAttachment: bool = false; att
   await req.respond(Http200, readFile(filePath), headers)
 
 # pandoc does the heavy lifting
-proc runPandoc(sourceMarkdown: string; outputPath: string; paperSize: string; margin: string; mainFont: string): tuple[ok: bool, output: string, missingPandoc: bool] =
+proc runPandoc(sourceMarkdown: string; outputPath: string; paperSize: string; margin: string; mainFont: string; lineSpacing: string; showPageNumbers: bool): tuple[ok: bool, output: string, missingPandoc: bool] =
   let tempDir = getTempDir() / (AppName & "-" & randomHex(10))
   createDir(tempDir)
   let tempMarkdownPath = tempDir / "source.md"
@@ -247,7 +248,7 @@ proc runPandoc(sourceMarkdown: string; outputPath: string; paperSize: string; ma
       # if preprocessing fails, fall back to original content
       writeFile(tempMarkdownPath, sourceMarkdown)
 
-    let args = @[
+    var args = @[
       tempMarkdownPath,
       "--from", "markdown+emoji+hard_line_breaks",
       "--pdf-engine=lualatex",
@@ -255,9 +256,14 @@ proc runPandoc(sourceMarkdown: string; outputPath: string; paperSize: string; ma
       "-V", "papersize=" & paperSize,
       "-V", "margin=" & margin,
       "-V", "mainfont=" & mainFont,
+      "-V", "linespacing=" & lineSpacing,
       "--resource-path", baseDir() & ":" & uploadsDir() & ":" & tempDir,
       "-o", outputPath
     ]
+
+    if not showPageNumbers:
+      args.add("-V")
+      args.add("hidepages=true")
 
     var process: Process
     try:
@@ -301,11 +307,13 @@ proc handleConvert(req: Request) {.async.} =
     mainFontFamily = "serif"
 
   let mainFont = if mainFontFamily == "sans": "TeX Gyre Heros" else: "TeX Gyre Pagella"
+  let lineSpacing = pickOption(formData.getOrDefault("line_spacing", ""), "1", ValidLineSpacings)
+  let showPageNumbers = formData.getOrDefault("page_numbers", "") == "on"
   let epoch = int(getTime().toUnix())
   let outputName = AppName & "_" & $epoch & "_" & randomHex(32) & ".pdf"
   let outputPath = generatedDir() / outputName
 
-  let conversion = runPandoc(markdown, outputPath, paperSize, margin, mainFont)
+  let conversion = runPandoc(markdown, outputPath, paperSize, margin, mainFont, lineSpacing, showPageNumbers)
 
   if not conversion.ok:
     let message = if conversion.missingPandoc:

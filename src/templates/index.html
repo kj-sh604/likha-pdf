@@ -22,24 +22,6 @@
       <h1>likha-pdf</h1>
       <p>simple markdown export with pandoc + lualatex.</p>
 
-      <section>
-        <h3>image upload</h3>
-        <form
-          id="upload-form"
-          hx-post="/upload-image"
-          hx-target="#upload-result"
-          hx-swap="innerHTML"
-          hx-encoding="multipart/form-data"
-          hx-indicator="#uploading"
-        >
-          <label for="image">image file</label>
-          <input id="image" name="image" type="file" accept="image/*" required />
-          <button id="upload-button" type="submit">upload image</button>
-          <small id="uploading" class="htmx-indicator">uploading…</small>
-        </form>
-        <div id="upload-result" aria-live="polite"></div>
-      </section>
-
       <form
         id="convert-form"
         hx-post="/convert"
@@ -47,7 +29,7 @@
         hx-swap="innerHTML"
         hx-indicator="#loading"
       >
-        <label for="markdown"><strong>textarea</strong></label>
+        <label for="markdown"><h3>textarea</h3></label>
         <textarea
           id="markdown"
           name="markdown"
@@ -55,6 +37,29 @@
           placeholder="markdown goes here..."
           required
         ></textarea>
+
+        <section id="image-upload-section">
+          <label for="image"><small>image file</small></label>
+          <input id="image" name="image" type="file" accept="image/*" />
+          <button
+            id="upload-button"
+            type="button"
+            hx-post="/upload-image"
+            hx-target="#upload-result"
+            hx-swap="innerHTML"
+            hx-encoding="multipart/form-data"
+            hx-include="#image"
+            hx-indicator="#uploading"
+          >upload image</button>
+          <small id="uploading" class="htmx-indicator">uploading…</small>
+          <div id="upload-result" aria-live="polite"></div>
+        </section>
+
+        <section id="md-file-section">
+          <h3>or upload a markdown file</h3>
+          <label for="md-file"><small><em>(overrides textarea)</em></small></label>
+          <input id="md-file" type="file" accept=".md,.markdown,text/markdown,text/plain" />
+        </section>
 
         <section>
           <h3>pdf options</h3>
@@ -83,6 +88,17 @@
               <input type="radio" name="main_font" value="sans" /> sans-serif
             </label>
           </fieldset>
+
+          <label for="line_spacing">Line spacing</label>
+          <select id="line_spacing" name="line_spacing">
+            <option value="1" selected>Single (1.0)</option>
+            <option value="1.5">One-and-a-half (1.5)</option>
+            <option value="2">Double (2.0)</option>
+          </select>
+
+          <label>
+            <input type="checkbox" name="page_numbers" value="on" checked /> show page numbers
+          </label>
         </section>
 
         <button id="convert-button" type="submit">generate pdf</button>

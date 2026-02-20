@@ -13,6 +13,8 @@
 \usepackage[paper=$papersize$,margin=$margin$]{geometry}
 \usepackage{microtype}
 \usepackage{parskip}
+\usepackage{setspace}
+\setstretch{$linespacing$}
 \usepackage{xcolor}
 \usepackage{graphicx}
 \usepackage{float}
@@ -64,6 +66,10 @@
 
 $if(highlighting-macros)$
 $highlighting-macros$
+$endif$
+
+$if(hidepages)$
+\pagestyle{empty}
 $endif$
 
 \begin{document}
