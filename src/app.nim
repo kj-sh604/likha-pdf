@@ -4,12 +4,29 @@ import std/[asynchttpserver, asyncdispatch, os, osproc, streams, strutils, table
 
 const
   AllowedImageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "svg"]
-  ValidPaperSizes = ["a4paper", "letterpaper", "legalpaper"]
+  ValidPaperSizes = [
+    "a0paper", "a1paper", "a2paper", "a3paper", "a4paper", "a5paper", "a6paper",
+    "b0paper", "b1paper", "b2paper", "b3paper", "b4paper", "b5paper", "b6paper",
+    "c4paper", "c5paper", "c6paper",
+    "letterpaper", "legalpaper", "executivepaper", "ledgerpaper",
+    "tabloid", "statement", "flsa"
+  ]
   ValidMargins = ["0.75in", "1in", "1.25in", "1.5in"]
   ValidLineSpacings = ["1", "1.5", "2"]
+  CustomPaperDimensions = [
+    ("tabloid",   "11in",  "17in"),
+    ("statement", "5.5in", "8.5in"),
+    ("flsa",      "8.5in", "13in"),
+  ]
 
 const
   AppName = "likha-pdf"
+
+proc lookupCustomPaper(name: string): tuple[width: string, height: string] =
+  for (paperName, w, h) in CustomPaperDimensions:
+    if paperName == name:
+      return (width: w, height: h)
+  (width: "", height: "")
 
 proc baseDir(): string {.inline.} =
   getAppDir()
@@ -253,13 +270,22 @@ proc runPandoc(sourceMarkdown: string; outputPath: string; paperSize: string; ma
       "--from", "markdown+emoji+hard_line_breaks",
       "--pdf-engine=lualatex",
       "--template", latexTemplatePath(),
-      "-V", "papersize=" & paperSize,
       "-V", "margin=" & margin,
       "-V", "mainfont=" & mainFont,
       "-V", "linespacing=" & lineSpacing,
       "--resource-path", baseDir() & ":" & uploadsDir() & ":" & tempDir,
       "-o", outputPath
     ]
+
+    let dims = lookupCustomPaper(paperSize)
+    if dims.width.len > 0:
+      args.add("-V")
+      args.add("paperwidth=" & dims.width)
+      args.add("-V")
+      args.add("paperheight=" & dims.height)
+    else:
+      args.add("-V")
+      args.add("papersize=" & paperSize)
 
     if not showPageNumbers:
       args.add("-V")

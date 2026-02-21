@@ -10,7 +10,11 @@
 \setmainfont{$mainfont$}[RawFeature={fallback=emojifallback}]
 \setmonofont{Latin Modern Mono}
 
+$if(paperwidth)$
+\usepackage[paperwidth=$paperwidth$,paperheight=$paperheight$,margin=$margin$]{geometry}
+$else$
 \usepackage[paper=$papersize$,margin=$margin$]{geometry}
+$endif$
 \usepackage{microtype}
 \usepackage{parskip}
 \usepackage{setspace}

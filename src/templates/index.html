@@ -1,113 +1,127 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>likha-pdf</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/kj-sh604/noir.css@latest/out/noir.min.css" />
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-    <style>
-      .htmx-indicator {
-        display: none;
-      }
 
-      .htmx-request .htmx-indicator,
-      .htmx-request.htmx-indicator {
-        display: inline;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>likha-pdf</h1>
-      <p>simple markdown export with pandoc + lualatex.</p>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>likha-pdf</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/kj-sh604/noir.css@latest/out/noir.min.css" />
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    .htmx-indicator {
+      display: none;
+    }
 
-      <form
-        id="convert-form"
-        hx-post="/convert"
-        hx-target="#result"
-        hx-swap="innerHTML"
-        hx-indicator="#loading"
-      >
-        <label for="markdown"><h3>textarea</h3></label>
-        <textarea
-          id="markdown"
-          name="markdown"
-          rows="16"
-          placeholder="markdown goes here..."
-          required
-        ></textarea>
+    .htmx-request .htmx-indicator,
+    .htmx-request.htmx-indicator {
+      display: inline;
+    }
+  </style>
+</head>
 
-        <section id="image-upload-section">
-          <label for="image"><small>image file</small></label>
-          <input id="image" name="image" type="file" accept="image/*" />
-          <button
-            id="upload-button"
-            type="button"
-            hx-post="/upload-image"
-            hx-target="#upload-result"
-            hx-swap="innerHTML"
-            hx-encoding="multipart/form-data"
-            hx-include="#image"
-            hx-indicator="#uploading"
-          >upload image</button>
-          <small id="uploading" class="htmx-indicator">uploading…</small>
-          <div id="upload-result" aria-live="polite"></div>
-        </section>
+<body>
+  <main>
+    <h1>likha-pdf</h1>
+    <p>simple markdown export with pandoc + lualatex.</p>
 
-        <section id="md-file-section">
-          <h3>or upload a markdown file</h3>
-          <label for="md-file"><small><em>(overrides textarea)</em></small></label>
-          <input id="md-file" type="file" accept=".md,.markdown,text/markdown,text/plain" />
-        </section>
+    <form id="convert-form" hx-post="/convert" hx-target="#result" hx-swap="innerHTML" hx-indicator="#loading">
+      <label for="markdown">
+        <h3>textarea</h3>
+      </label>
+      <textarea id="markdown" name="markdown" rows="16" placeholder="markdown goes here..." required></textarea>
 
-        <section>
-          <h3>pdf options</h3>
+      <section id="image-upload-section">
+        <label for="image"><small>image file</small></label>
+        <input id="image" name="image" type="file" accept="image/*" />
+        <button id="upload-button" type="button" hx-post="/upload-image" hx-target="#upload-result" hx-swap="innerHTML"
+          hx-encoding="multipart/form-data" hx-include="#image" hx-indicator="#uploading">upload image</button>
+        <small id="uploading" class="htmx-indicator">uploading…</small>
+        <div id="upload-result" aria-live="polite"></div>
+      </section>
 
-          <label for="paper_size">Paper size</label>
-          <select id="paper_size" name="paper_size">
-            <option value="a4paper">A4</option>
-            <option value="letterpaper">US Letter</option>
-            <option value="legalpaper">US Legal</option>
-          </select>
+      <section id="md-file-section">
+        <h3>or upload a markdown file</h3>
+        <label for="md-file"><small><em>(overrides textarea)</em></small></label>
+        <input id="md-file" type="file" accept=".md,.markdown,text/markdown,text/plain" />
+      </section>
 
-          <label for="margin">Margins</label>
-          <select id="margin" name="margin">
-            <option value="0.75in">Narrow (0.75in)</option>
-            <option value="1in" selected>Normal (1in)</option>
-            <option value="1.25in">Comfort (1.25in)</option>
-            <option value="1.5in">Wide (1.5in)</option>
-          </select>
+      <section>
+        <h3>pdf options</h3>
 
-          <fieldset>
-            <legend>main font</legend>
-            <label>
-              <input type="radio" name="main_font" value="serif" checked /> serif
-            </label>
-            <label>
-              <input type="radio" name="main_font" value="sans" /> sans-serif
-            </label>
-          </fieldset>
+        <label for="paper_size">Paper size</label>
+        <select id="paper_size" name="paper_size">
+          <optgroup label="US / North America">
+            <option value="letterpaper" selected>US Letter (8.5 × 11in)</option>
+            <option value="legalpaper">US Legal (8.5 × 14in)</option>
+            <option value="executivepaper">Executive (7 × 10in)</option>
+            <option value="ledgerpaper">Ledger (17 × 11in)</option>
+            <option value="tabloid">Tabloid (11 × 17in)</option>
+            <option value="statement">Statement (5.5 × 8.5in)</option>
+            <option value="flsa">FLSA (8.5 × 13in)</option>
+          </optgroup>
+          <optgroup label="ISO A">
+            <option value="a0paper">A0 (841 × 1189mm)</option>
+            <option value="a1paper">A1 (594 × 841mm)</option>
+            <option value="a2paper">A2 (420 × 594mm)</option>
+            <option value="a3paper">A3 (297 × 420mm)</option>
+            <option value="a4paper">A4 (210 × 297mm)</option>
+            <option value="a5paper">A5 (148 × 210mm)</option>
+            <option value="a6paper">A6 (105 × 148mm)</option>
+          </optgroup>
+          <optgroup label="ISO B">
+            <option value="b0paper">B0 (1000 × 1414mm)</option>
+            <option value="b1paper">B1 (707 × 1000mm)</option>
+            <option value="b2paper">B2 (500 × 707mm)</option>
+            <option value="b3paper">B3 (353 × 500mm)</option>
+            <option value="b4paper">B4 (250 × 353mm)</option>
+            <option value="b5paper">B5 (176 × 250mm)</option>
+            <option value="b6paper">B6 (125 × 176mm)</option>
+          </optgroup>
+          <optgroup label="ISO C">
+            <option value="c4paper">C4 (229 × 324mm)</option>
+            <option value="c5paper">C5 (162 × 229mm)</option>
+            <option value="c6paper">C6 (114 × 162mm)</option>
+          </optgroup>
+        </select>
 
-          <label for="line_spacing">Line spacing</label>
-          <select id="line_spacing" name="line_spacing">
-            <option value="1" selected>Single (1.0)</option>
-            <option value="1.5">One-and-a-half (1.5)</option>
-            <option value="2">Double (2.0)</option>
-          </select>
+        <label for="margin">Margins</label>
+        <select id="margin" name="margin">
+          <option value="0.75in">Narrow (0.75in)</option>
+          <option value="1in" selected>Normal (1in)</option>
+          <option value="1.25in">Comfort (1.25in)</option>
+          <option value="1.5in">Wide (1.5in)</option>
+        </select>
 
+        <fieldset>
+          <legend>main font</legend>
           <label>
-            <input type="checkbox" name="page_numbers" value="on" checked /> show page numbers
+            <input type="radio" name="main_font" value="serif" checked /> serif
           </label>
-        </section>
+          <label>
+            <input type="radio" name="main_font" value="sans" /> sans-serif
+          </label>
+        </fieldset>
 
-        <button id="convert-button" type="submit">generate pdf</button>
-        <small id="loading" class="htmx-indicator">converting…</small>
-      </form>
+        <label for="line_spacing">Line spacing</label>
+        <select id="line_spacing" name="line_spacing">
+          <option value="1" selected>Single (1.0)</option>
+          <option value="1.5">One-and-a-half (1.5)</option>
+          <option value="2">Double (2.0)</option>
+        </select>
 
-      <section id="result" aria-live="polite"></section>
-    </main>
+        <label>
+          <input type="checkbox" name="page_numbers" value="on" checked /> show page numbers
+        </label>
+      </section>
 
-    <script src="/static/main.js"></script>
-  </body>
+      <button id="convert-button" type="submit">generate pdf</button>
+      <small id="loading" class="htmx-indicator">converting…</small>
+    </form>
+
+    <section id="result" aria-live="polite"></section>
+  </main>
+
+  <script src="/static/main.js"></script>
+</body>
+
 </html>
