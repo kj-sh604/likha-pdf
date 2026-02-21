@@ -1,4 +1,8 @@
-import std/[asynchttpserver, asyncdispatch, os, osproc, streams, strutils, tables, times, uri, random]
+import
+  std/[
+    asynchttpserver, asyncdispatch, os, osproc, streams, strutils, tables, times, uri,
+    random,
+  ]
 
 # tiny backend in nimlang, may be stupid, but this was fun
 
@@ -7,20 +11,18 @@ const
   ValidPaperSizes = [
     "a0paper", "a1paper", "a2paper", "a3paper", "a4paper", "a5paper", "a6paper",
     "b0paper", "b1paper", "b2paper", "b3paper", "b4paper", "b5paper", "b6paper",
-    "c4paper", "c5paper", "c6paper",
-    "letterpaper", "legalpaper", "executivepaper", "ledgerpaper",
-    "tabloid", "statement", "flsa"
+    "c4paper", "c5paper", "c6paper", "letterpaper", "legalpaper", "executivepaper",
+    "ledgerpaper", "tabloid", "statement", "flsa",
   ]
   ValidMargins = ["0.75in", "1in", "1.25in", "1.5in"]
   ValidLineSpacings = ["1", "1.5", "2"]
   CustomPaperDimensions = [
-    ("tabloid",   "11in",  "17in"),
+    ("tabloid", "11in", "17in"),
     ("statement", "5.5in", "8.5in"),
-    ("flsa",      "8.5in", "13in"),
+    ("flsa", "8.5in", "13in"),
   ]
 
-const
-  AppName = "likha-pdf"
+const AppName = "likha-pdf"
 
 proc lookupCustomPaper(name: string): tuple[width: string, height: string] =
   for (paperName, w, h) in CustomPaperDimensions:
@@ -70,7 +72,9 @@ proc randomHex(length: int): string =
   for _ in 0 ..< length:
     result.add(hexChars[rand(15)])
 
-proc renderTemplate(filePath: string; replacements: openArray[(string, string)]): string =
+proc renderTemplate(
+    filePath: string, replacements: openArray[(string, string)]
+): string =
   result = readFile(filePath)
   for (token, replacement) in replacements:
     result = result.replace(token, replacement)
@@ -95,7 +99,7 @@ proc parseUrlEncoded(body: string): Table[string, string] =
       result[key] = value
 
 # "options" are optional, defaults are forever.
-proc pickOption(value: string; fallback: string; options: openArray[string]): string =
+proc pickOption(value: string, fallback: string, options: openArray[string]): string =
   for option in options:
     if option == value:
       return value
@@ -104,10 +108,8 @@ proc pickOption(value: string; fallback: string; options: openArray[string]): st
 proc sanitizeFilename(filename: string): string =
   result = newStringOfCap(filename.len)
   for ch in filename:
-    if (ch >= 'a' and ch <= 'z') or
-       (ch >= 'A' and ch <= 'Z') or
-       (ch >= '0' and ch <= '9') or
-       (ch in {'-', '_', '.'}):
+    if (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or
+        (ch >= '0' and ch <= '9') or (ch in {'-', '_', '.'}):
       result.add(ch)
     elif ch == ' ':
       result.add('_')
@@ -131,7 +133,7 @@ proc isAllowedImage(filename: string): bool =
       return true
   false
 
-proc tailText(value: string; maxLen: int = 1200): string =
+proc tailText(value: string, maxLen: int = 1200): string =
   if value.len <= maxLen:
     return value
   value[value.len - maxLen .. ^1]
@@ -149,7 +151,7 @@ proc stripTrailingCrlf(value: string): string =
     result.setLen(result.len - 2)
 
 # hand-rolled multipart parsing, yes i am aware that this is "eh"
-proc parseMultipart(body: string; boundary: string): seq[MultipartPart] =
+proc parseMultipart(body: string, boundary: string): seq[MultipartPart] =
   let delimiter = "--" & boundary
   for rawChunk in body.split(delimiter):
     var chunk = rawChunk
@@ -195,13 +197,15 @@ proc parseMultipart(body: string; boundary: string): seq[MultipartPart] =
         contentType = headerValue
 
     if name.len > 0:
-      result.add(MultipartPart(name: name, filename: filename, contentType: contentType, content: content))
+      result.add(
+        MultipartPart(
+          name: name, filename: filename, contentType: contentType, content: content
+        )
+      )
 
 proc isSafeRelativePath(pathPart: string): bool =
-  pathPart.len > 0 and
-  not pathPart.contains("..") and
-  not pathPart.contains('\\') and
-  not pathPart.startsWith("/")
+  pathPart.len > 0 and not pathPart.contains("..") and not pathPart.contains('\\') and
+    not pathPart.startsWith("/")
 
 proc fileContentType(filePath: string): string =
   let lowered = filePath.toLowerAscii()
@@ -226,15 +230,20 @@ proc fileContentType(filePath: string): string =
   "application/octet-stream"
 
 # response wrappers
-proc respondHtml(req: Request; code: HttpCode; content: string) {.async.} =
+proc respondHtml(req: Request, code: HttpCode, content: string) {.async.} =
   let headers = newHttpHeaders({"Content-Type": "text/html; charset=utf-8"})
   await req.respond(code, content, headers)
 
-proc respondText(req: Request; code: HttpCode; content: string) {.async.} =
+proc respondText(req: Request, code: HttpCode, content: string) {.async.} =
   let headers = newHttpHeaders({"Content-Type": "text/plain; charset=utf-8"})
   await req.respond(code, content, headers)
 
-proc respondFile(req: Request; filePath: string; asAttachment: bool = false; attachmentName: string = "") {.async.} =
+proc respondFile(
+    req: Request,
+    filePath: string,
+    asAttachment: bool = false,
+    attachmentName: string = "",
+) {.async.} =
   if not fileExists(filePath):
     await respondText(req, Http404, "Not found")
     return
@@ -247,7 +256,15 @@ proc respondFile(req: Request; filePath: string; asAttachment: bool = false; att
   await req.respond(Http200, readFile(filePath), headers)
 
 # pandoc does the heavy lifting
-proc runPandoc(sourceMarkdown: string; outputPath: string; paperSize: string; margin: string; mainFont: string; lineSpacing: string; showPageNumbers: bool): tuple[ok: bool, output: string, missingPandoc: bool] =
+proc runPandoc(
+    sourceMarkdown: string,
+    outputPath: string,
+    paperSize: string,
+    margin: string,
+    mainFont: string,
+    lineSpacing: string,
+    showPageNumbers: bool,
+): tuple[ok: bool, output: string, missingPandoc: bool] =
   let tempDir = getTempDir() / (AppName & "-" & randomHex(10))
   createDir(tempDir)
   let tempMarkdownPath = tempDir / "source.md"
@@ -258,7 +275,9 @@ proc runPandoc(sourceMarkdown: string; outputPath: string; paperSize: string; ma
     writeFile(tempRawPath, sourceMarkdown)
 
     # preprocess markdown: convert to ascii with transliteration and normalize quotes
-    let iconvCmd = "iconv -c -t ASCII//TRANSLIT " & quoteShell(tempRawPath) & " | sed 's/'\\''/'/g; s/\"\"/\"/g' > " & quoteShell(tempMarkdownPath)
+    let iconvCmd =
+      "iconv -c -t ASCII//TRANSLIT " & quoteShell(tempRawPath) &
+      " | sed 's/'\\''/'/g; s/\"\"/\"/g' > " & quoteShell(tempMarkdownPath)
     let (_, iconvExitCode) = execCmdEx(iconvCmd)
 
     if iconvExitCode != 0:
@@ -267,14 +286,21 @@ proc runPandoc(sourceMarkdown: string; outputPath: string; paperSize: string; ma
 
     var args = @[
       tempMarkdownPath,
-      "--from", "markdown+emoji+hard_line_breaks",
+      "--from",
+      "markdown+emoji+hard_line_breaks",
       "--pdf-engine=lualatex",
-      "--template", latexTemplatePath(),
-      "-V", "margin=" & margin,
-      "-V", "mainfont=" & mainFont,
-      "-V", "linespacing=" & lineSpacing,
-      "--resource-path", baseDir() & ":" & uploadsDir() & ":" & tempDir,
-      "-o", outputPath
+      "--template",
+      latexTemplatePath(),
+      "-V",
+      "margin=" & margin,
+      "-V",
+      "mainfont=" & mainFont,
+      "-V",
+      "linespacing=" & lineSpacing,
+      "--resource-path",
+      baseDir() & ":" & uploadsDir() & ":" & tempDir,
+      "-o",
+      outputPath,
     ]
 
     let dims = lookupCustomPaper(paperSize)
@@ -293,9 +319,14 @@ proc runPandoc(sourceMarkdown: string; outputPath: string; paperSize: string; ma
 
     var process: Process
     try:
-      process = startProcess("pandoc", args = args, options = {poUsePath, poStdErrToStdOut})
+      process =
+        startProcess("pandoc", args = args, options = {poUsePath, poStdErrToStdOut})
     except OSError:
-      return (ok: false, output: "Pandoc is not installed or not in PATH.", missingPandoc: true)
+      return (
+        ok: false,
+        output: "Pandoc is not installed or not in PATH.",
+        missingPandoc: true,
+      )
 
     let output = process.outputStream.readAll()
     let exitCode = process.waitForExit()
@@ -321,11 +352,14 @@ proc handleConvert(req: Request) {.async.} =
   let markdown = formData.getOrDefault("markdown", "").strip()
 
   if markdown.len == 0:
-    let html = renderTemplate(partialsDir() / "error.html", [("{{ message }}", "Markdown content is required.")])
+    let html = renderTemplate(
+      partialsDir() / "error.html", [("{{ message }}", "Markdown content is required.")]
+    )
     await respondHtml(req, Http400, html)
     return
 
-  let paperSize = pickOption(formData.getOrDefault("paper_size", ""), "a4paper", ValidPaperSizes)
+  let paperSize =
+    pickOption(formData.getOrDefault("paper_size", ""), "a4paper", ValidPaperSizes)
   let margin = pickOption(formData.getOrDefault("margin", ""), "1in", ValidMargins)
 
   var mainFontFamily = formData.getOrDefault("main_font", "serif")
@@ -333,22 +367,31 @@ proc handleConvert(req: Request) {.async.} =
     mainFontFamily = "serif"
 
   let mainFont = if mainFontFamily == "sans": "TeX Gyre Heros" else: "TeX Gyre Pagella"
-  let lineSpacing = pickOption(formData.getOrDefault("line_spacing", ""), "1", ValidLineSpacings)
+  let lineSpacing =
+    pickOption(formData.getOrDefault("line_spacing", ""), "1", ValidLineSpacings)
   let showPageNumbers = formData.getOrDefault("page_numbers", "") == "on"
   let epoch = int(getTime().toUnix())
   let outputName = AppName & "_" & $epoch & "_" & randomHex(32) & ".pdf"
   let outputPath = generatedDir() / outputName
 
-  let conversion = runPandoc(markdown, outputPath, paperSize, margin, mainFont, lineSpacing, showPageNumbers)
+  let conversion = runPandoc(
+    markdown, outputPath, paperSize, margin, mainFont, lineSpacing, showPageNumbers
+  )
 
   if not conversion.ok:
-    let message = if conversion.missingPandoc:
-      conversion.output
-    else:
-      let stderr = conversion.output.strip()
-      if stderr.len > 0: tailText(stderr) else: "PDF conversion failed."
+    let message =
+      if conversion.missingPandoc:
+        conversion.output
+      else:
+        let stderr = conversion.output.strip()
+        if stderr.len > 0:
+          tailText(stderr)
+        else:
+          "PDF conversion failed."
 
-    let html = renderTemplate(partialsDir() / "error.html", [("{{ message }}", htmlEscape(message))])
+    let html = renderTemplate(
+      partialsDir() / "error.html", [("{{ message }}", htmlEscape(message))]
+    )
     let code = if conversion.missingPandoc: Http500 else: Http400
     await respondHtml(req, code, html)
     return
@@ -357,8 +400,8 @@ proc handleConvert(req: Request) {.async.} =
     partialsDir() / "result.html",
     [
       ("{{ filename }}", htmlEscape(outputName)),
-      ("{{ download_url }}", "/download/" & encodeUrl(outputName))
-    ]
+      ("{{ download_url }}", "/download/" & encodeUrl(outputName)),
+    ],
   )
   await respondHtml(req, Http200, html)
 
@@ -368,7 +411,10 @@ proc handleUploadImage(req: Request) {.async.} =
   let boundary = extractBoundary(contentType)
 
   if boundary.len == 0:
-    let html = renderTemplate(partialsDir() / "upload_error.html", [("{{ message }}", "image file is required.")])
+    let html = renderTemplate(
+      partialsDir() / "upload_error.html",
+      [("{{ message }}", "image file is required.")],
+    )
     await respondHtml(req, Http400, html)
     return
 
@@ -382,13 +428,19 @@ proc handleUploadImage(req: Request) {.async.} =
       break
 
   if not foundImage or imagePart.filename.strip().len == 0:
-    let html = renderTemplate(partialsDir() / "upload_error.html", [("{{ message }}", "image file is required.")])
+    let html = renderTemplate(
+      partialsDir() / "upload_error.html",
+      [("{{ message }}", "image file is required.")],
+    )
     await respondHtml(req, Http400, html)
     return
 
   let originalName = sanitizeFilename(baseFilename(imagePart.filename))
   if originalName.len == 0 or not isAllowedImage(originalName):
-    let html = renderTemplate(partialsDir() / "upload_error.html", [("{{ message }}", "unsupported image type.")])
+    let html = renderTemplate(
+      partialsDir() / "upload_error.html",
+      [("{{ message }}", "unsupported image type.")],
+    )
     await respondHtml(req, Http400, html)
     return
 
@@ -407,8 +459,8 @@ proc handleUploadImage(req: Request) {.async.} =
     [
       ("{{ filename }}", htmlEscape(storedName)),
       ("{{ markdown_snippet }}", htmlEscape(markdownSnippet)),
-      ("{{ preview_url }}", "/uploads/" & encodeUrl(storedName))
-    ]
+      ("{{ preview_url }}", "/uploads/" & encodeUrl(storedName)),
+    ],
   )
   await respondHtml(req, Http200, html)
 
@@ -441,7 +493,12 @@ proc route(req: Request) {.async.} =
     if not isSafeRelativePath(relativePath):
       await respondText(req, Http400, "Invalid path")
       return
-    await respondFile(req, generatedDir() / relativePath, asAttachment = true, attachmentName = relativePath)
+    await respondFile(
+      req,
+      generatedDir() / relativePath,
+      asAttachment = true,
+      attachmentName = relativePath,
+    )
     return
 
   if req.reqMethod == HttpPost and path == "/convert":
