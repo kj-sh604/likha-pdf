@@ -259,7 +259,7 @@ proc runPandoc(sourceMarkdown: string; outputPath: string; paperSize: string; ma
 
     # preprocess markdown: convert to ascii with transliteration and normalize quotes
     let iconvCmd = "iconv -c -t ASCII//TRANSLIT " & quoteShell(tempRawPath) & " | sed 's/'\\''/'/g; s/\"\"/\"/g' > " & quoteShell(tempMarkdownPath)
-    let (iconvOutput, iconvExitCode) = execCmdEx(iconvCmd)
+    let (_, iconvExitCode) = execCmdEx(iconvCmd)
 
     if iconvExitCode != 0:
       # if preprocessing fails, fall back to original content
