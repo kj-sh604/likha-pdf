@@ -14,7 +14,7 @@ const
     "c4paper", "c5paper", "c6paper", "letterpaper", "legalpaper", "executivepaper",
     "ledgerpaper", "tabloid", "statement", "flsa",
   ]
-  ValidMargins = ["0.75in", "1in", "1.25in", "1.5in"]
+  ValidMargins = ["0.25in", "0.5in", "0.75in", "1in", "1.25in", "1.5in", "1.75in"]
   ValidLineSpacings = ["1", "1.5", "2"]
   CustomPaperDimensions = [
     ("tabloid", "11in", "17in"),
