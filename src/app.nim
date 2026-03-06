@@ -521,5 +521,5 @@ when isMainModule:
     createDir(uploadsDir())
 
   let server = newAsyncHttpServer()
-  echo "listening on http://localhost:5000"
-  waitFor server.serve(Port(5000), route)
+  echo "listening on http://localhost:5001"
+  waitFor server.serve(Port(5001), route)
