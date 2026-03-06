@@ -37,7 +37,7 @@ nim c -d:release -o:likha-pdf app.nim
 
 ```bash
 docker build -t likha-pdf .
-docker run -p 5000:5000 likha-pdf
+docker run -p 5001:5001 likha-pdf
 ```
 
 open `http://localhost:5000`
