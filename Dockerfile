@@ -34,4 +34,4 @@ USER app
 
 EXPOSE 5001
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "2", "--threads", "4", "--timeout", "180", "--graceful-timeout", "30", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--worker-class", "gthread", "--workers", "1", "--threads", "2", "--timeout", "240", "--graceful-timeout", "30", "--keep-alive", "5", "--max-requests", "300", "--max-requests-jitter", "50", "--access-logfile", "-", "--error-logfile", "-", "app:app"]

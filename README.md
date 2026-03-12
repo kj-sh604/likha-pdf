@@ -44,10 +44,14 @@ python3 app.py
 cd src/
 ../.venv/bin/gunicorn \
 	--bind 127.0.0.1:5001 \
-	--workers 2 \
-	--threads 4 \
-	--timeout 180 \
+	--worker-class gthread \
+	--workers 1 \
+	--threads 2 \
+	--timeout 240 \
 	--graceful-timeout 30 \
+	--keep-alive 5 \
+	--max-requests 300 \
+	--max-requests-jitter 50 \
 	--access-logfile - \
 	--error-logfile - \
 	app:app
