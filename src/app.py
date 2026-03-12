@@ -1,35 +1,37 @@
 #!/usr/bin/env python3
 
 # likha-pdf — markdown to pdf, no latex required
-# converts markdown to html, then html to pdf via weasyprint
-# falls back to reportlab if weasyprint chokes — a pdf is always produced
+# production-friendly flask app with weasyprint + reportlab fallback
 
+import logging
 import os
-import re
 import secrets
 import time
+from pathlib import Path, PurePosixPath
 
 from flask import (
     Flask,
+    Response,
+    current_app,
     request,
     send_from_directory,
-    render_template_string,
     abort,
 )
 from markupsafe import escape
 from markdown import markdown
-from pygments.formatters import HtmlFormatter
 from weasyprint import HTML
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 APP_NAME = "likha-pdf"
-PORT = 5001
+DEFAULT_HOST = "0.0.0.0"
+DEFAULT_PORT = 5001
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-GENERATED_DIR = os.path.join(BASE_DIR, "generated")
-UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
-TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
-PARTIALS_DIR = os.path.join(TEMPLATES_DIR, "partials")
-STATIC_DIR = os.path.join(BASE_DIR, "static")
+BASE_DIR = Path(__file__).resolve().parent
+GENERATED_DIR = BASE_DIR / "generated"
+UPLOADS_DIR = BASE_DIR / "uploads"
+TEMPLATES_DIR = BASE_DIR / "templates"
+PARTIALS_DIR = TEMPLATES_DIR / "partials"
+STATIC_DIR = BASE_DIR / "static"
 
 ALLOWED_IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp", "svg"}
 
@@ -93,16 +95,20 @@ MARKDOWN_EXT_CONFIG = {
     },
 }
 
-app = Flask(
-    __name__,
-    template_folder=TEMPLATES_DIR,
-    static_folder=STATIC_DIR,
-    static_url_path="/static",
-)
-app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024  # 64 MB
-
 
 # helpers
+def env_bool(name, default=False):
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def ensure_runtime_dirs():
+    GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+
 def random_hex(length=32):
     return secrets.token_hex(length // 2)
 
@@ -132,19 +138,15 @@ def is_allowed_image(filename):
 
 
 def is_safe_relative_path(path_part):
-    return (
-        bool(path_part)
-        and ".." not in path_part
-        and "\\" not in path_part
-        and not path_part.startswith("/")
-    )
+    if not path_part or "\\" in path_part:
+        return False
+    safe_path = PurePosixPath(path_part)
+    return not safe_path.is_absolute() and ".." not in safe_path.parts
 
 
 def read_partial(name, replacements=None):
     """read a partial html template and apply replacements"""
-    path = os.path.join(PARTIALS_DIR, name)
-    with open(path, "r", encoding="utf-8") as f:
-        content = f.read()
+    content = (PARTIALS_DIR / name).read_text(encoding="utf-8")
     if replacements:
         for token, value in replacements.items():
             content = content.replace(token, value)
@@ -312,7 +314,7 @@ def convert_with_weasyprint(full_html, output_path):
     try:
         doc = HTML(
             string=full_html,
-            base_url=BASE_DIR,
+            base_url=str(BASE_DIR),
         )
         doc.write_pdf(output_path)
         return True, ""
@@ -452,6 +454,7 @@ def generate_pdf(source_markdown, output_path, paper_size, margin,
 
     # weasyprint failed — fall back to reportlab
     try:
+        current_app.logger.warning("weasyprint failed, using reportlab fallback: %s", err)
         convert_with_reportlab(
             source_markdown, output_path,
             paper_size, margin, font_family, line_spacing,
@@ -461,108 +464,145 @@ def generate_pdf(source_markdown, output_path, paper_size, margin,
         return False, f"weasyprint: {err} | reportlab: {fallback_err}"
 
 
-# routes
-@app.route("/")
-def index():
-    index_path = os.path.join(TEMPLATES_DIR, "index.html")
-    with open(index_path, "r", encoding="utf-8") as f:
-        return f.read()
+def create_app():
+    ensure_runtime_dirs()
 
-
-@app.route("/convert", methods=["POST"])
-def convert():
-    md = request.form.get("markdown", "").strip()
-    if not md:
-        return read_partial("error.html", {
-            "{{ message }}": "Markdown content is required.",
-        }), 400
-
-    paper_size = pick_option(
-        request.form.get("paper_size", ""), "letterpaper", VALID_PAPER_SIZES,
-    )
-    margin = pick_option(
-        request.form.get("margin", ""), "1in", VALID_MARGINS,
+    app = Flask(
+        __name__,
+        template_folder=str(TEMPLATES_DIR),
+        static_folder=str(STATIC_DIR),
+        static_url_path="/static",
     )
 
-    font_family = request.form.get("main_font", "serif")
-    if font_family not in ("serif", "sans"):
-        font_family = "serif"
+    app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH", str(64 * 1024 * 1024)))
 
-    line_spacing = pick_option(
-        request.form.get("line_spacing", ""), "1", VALID_LINE_SPACINGS,
-    )
-    show_page_numbers = request.form.get("page_numbers") == "on"
+    if env_bool("TRUST_PROXY", default=True):
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
-    epoch = int(time.time())
-    output_name = f"{APP_NAME}_{epoch}_{random_hex()}.pdf"
-    output_path = os.path.join(GENERATED_DIR, output_name)
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    app.logger.setLevel(log_level)
 
-    ok, err = generate_pdf(
-        md, output_path,
-        paper_size, margin, font_family, line_spacing, show_page_numbers,
-    )
+    @app.after_request
+    def add_security_headers(resp):
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("X-Frame-Options", "DENY")
+        resp.headers.setdefault("Referrer-Policy", "no-referrer")
+        return resp
 
-    if not ok:
-        return read_partial("error.html", {
-            "{{ message }}": str(escape(tail_text(err))),
-        }), 500
-
-    return read_partial("result.html", {
-        "{{ filename }}": str(escape(output_name)),
-        "{{ download_url }}": f"/download/{output_name}",
-    })
-
-
-@app.route("/upload-image", methods=["POST"])
-def upload_image():
-    uploaded = request.files.get("image")
-    if not uploaded or not uploaded.filename or not uploaded.filename.strip():
+    @app.errorhandler(413)
+    def payload_too_large(_err):
         return read_partial("upload_error.html", {
-            "{{ message }}": "image file is required.",
-        }), 400
+            "{{ message }}": "request body too large.",
+        }), 413
 
-    original = sanitize_filename(uploaded.filename)
-    if not original or not is_allowed_image(original):
-        return read_partial("upload_error.html", {
-            "{{ message }}": "unsupported image type.",
-        }), 400
+    @app.route("/healthz")
+    def healthz():
+        return Response("ok\n", mimetype="text/plain")
 
-    ext = original.rsplit(".", 1)[-1].lower()
-    epoch = int(time.time())
-    stored_name = f"img_{epoch}_{random_hex()}.{ext}"
-    image_path = os.path.join(UPLOADS_DIR, stored_name)
-    uploaded.save(image_path)
+    @app.route("/")
+    def index():
+        return send_from_directory(str(TEMPLATES_DIR), "index.html")
 
-    snippet = f"![](uploads/{stored_name})"
-    return read_partial("upload_result.html", {
-        "{{ filename }}": str(escape(stored_name)),
-        "{{ markdown_snippet }}": str(escape(snippet)),
-        "{{ preview_url }}": f"/uploads/{stored_name}",
-    })
+    @app.route("/convert", methods=["POST"])
+    def convert():
+        md = request.form.get("markdown", "").strip()
+        if not md:
+            return read_partial("error.html", {
+                "{{ message }}": "Markdown content is required.",
+            }), 400
+
+        paper_size = pick_option(
+            request.form.get("paper_size", ""), "letterpaper", VALID_PAPER_SIZES,
+        )
+        margin = pick_option(
+            request.form.get("margin", ""), "1in", VALID_MARGINS,
+        )
+
+        font_family = request.form.get("main_font", "serif")
+        if font_family not in ("serif", "sans"):
+            font_family = "serif"
+
+        line_spacing = pick_option(
+            request.form.get("line_spacing", ""), "1", VALID_LINE_SPACINGS,
+        )
+        show_page_numbers = request.form.get("page_numbers") == "on"
+
+        output_name = f"{APP_NAME}_{int(time.time())}_{random_hex()}.pdf"
+        output_path = GENERATED_DIR / output_name
+
+        ok, err = generate_pdf(
+            md,
+            str(output_path),
+            paper_size,
+            margin,
+            font_family,
+            line_spacing,
+            show_page_numbers,
+        )
+
+        if not ok:
+            app.logger.error("pdf generation failed: %s", err)
+            return read_partial("error.html", {
+                "{{ message }}": str(escape(tail_text(err))),
+            }), 500
+
+        return read_partial("result.html", {
+            "{{ filename }}": str(escape(output_name)),
+            "{{ download_url }}": f"/download/{output_name}",
+        })
+
+    @app.route("/upload-image", methods=["POST"])
+    def upload_image():
+        uploaded = request.files.get("image")
+        if not uploaded or not uploaded.filename or not uploaded.filename.strip():
+            return read_partial("upload_error.html", {
+                "{{ message }}": "image file is required.",
+            }), 400
+
+        original = sanitize_filename(uploaded.filename)
+        if not original or not is_allowed_image(original):
+            return read_partial("upload_error.html", {
+                "{{ message }}": "unsupported image type.",
+            }), 400
+
+        ext = original.rsplit(".", 1)[-1].lower()
+        stored_name = f"img_{int(time.time())}_{random_hex()}.{ext}"
+        image_path = UPLOADS_DIR / stored_name
+        uploaded.save(str(image_path))
+
+        snippet = f"![](uploads/{stored_name})"
+        return read_partial("upload_result.html", {
+            "{{ filename }}": str(escape(stored_name)),
+            "{{ markdown_snippet }}": str(escape(snippet)),
+            "{{ preview_url }}": f"/uploads/{stored_name}",
+        })
+
+    @app.route("/uploads/<path:filename>")
+    def serve_upload(filename):
+        if not is_safe_relative_path(filename):
+            abort(400)
+        return send_from_directory(str(UPLOADS_DIR), filename, conditional=True)
+
+    @app.route("/download/<path:filename>")
+    def download(filename):
+        if not is_safe_relative_path(filename):
+            abort(400)
+        return send_from_directory(
+            str(GENERATED_DIR),
+            filename,
+            as_attachment=True,
+            download_name=filename,
+            conditional=True,
+        )
+
+    return app
 
 
-@app.route("/uploads/<path:filename>")
-def serve_upload(filename):
-    if not is_safe_relative_path(filename):
-        abort(400)
-    return send_from_directory(UPLOADS_DIR, filename)
+app = create_app()
 
 
-@app.route("/download/<path:filename>")
-def download(filename):
-    if not is_safe_relative_path(filename):
-        abort(400)
-    return send_from_directory(
-        GENERATED_DIR, filename,
-        as_attachment=True,
-        download_name=filename,
-    )
-
-
-# main
 if __name__ == "__main__":
-    os.makedirs(GENERATED_DIR, exist_ok=True)
-    os.makedirs(UPLOADS_DIR, exist_ok=True)
-
-    print(f"  {APP_NAME} listening on http://localhost:{PORT}")
-    app.run(host="0.0.0.0", port=PORT, debug=False)
+    host = os.getenv("HOST", DEFAULT_HOST)
+    port = int(os.getenv("PORT", str(DEFAULT_PORT)))
+    print(f"  {APP_NAME} listening on http://{host}:{port}")
+    app.run(host=host, port=port, debug=False)

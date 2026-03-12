@@ -16,6 +16,7 @@ a simple web app that converts markdown to pdf.
 
 - python 3.10+
 - system packages: `libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 shared-mime-info`
+- gunicorn (installed from `requirements.txt`)
 
 ## image usage
 
@@ -29,10 +30,33 @@ a simple web app that converts markdown to pdf.
 ### local
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 cd src/
 python3 app.py
 ```
+
+### production (vps + nginx)
+
+```bash
+cd src/
+../.venv/bin/gunicorn \
+	--bind 127.0.0.1:5001 \
+	--workers 2 \
+	--threads 4 \
+	--timeout 180 \
+	--graceful-timeout 30 \
+	--access-logfile - \
+	--error-logfile - \
+	app:app
+```
+
+nginx should reverse proxy to `127.0.0.1:5001` and pass:
+
+- `X-Forwarded-For`
+- `X-Forwarded-Proto`
+- `X-Forwarded-Host`
 
 ### docker
 
