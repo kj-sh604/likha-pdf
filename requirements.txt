@@ -1,0 +1,6 @@
+flask==3.1.*
+markdown==3.7.*
+pygments==2.19.*
+weasyprint==63.*
+reportlab==4.3.*
+gunicorn==23.0.*
