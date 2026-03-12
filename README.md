@@ -2,7 +2,8 @@
 
 a simple web app that converts markdown to pdf.
 
-<img width="1440" height="1080" alt="likha-pdf screenshot" src="https://github.com/user-attachments/assets/9fa15803-f0da-43d0-8a82-0fc490f3d5ff" />
+<img width="1280" height="800" alt="likha-pdf screenshot" src="https://github.com/user-attachments/assets/578b8410-53ad-4323-a45a-19ae3aabe61d" />
+
 
 ## features
 
