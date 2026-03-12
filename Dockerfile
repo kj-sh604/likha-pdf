@@ -1,23 +1,27 @@
-FROM ubuntu:24.04
+FROM python:3.12-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y \
-    nim \
-    build-essential \
-    pandoc \
-    texlive-full \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libcairo2 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libffi-dev \
+    shared-mime-info \
+    fonts-noto \
     fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY src/ .
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-RUN nim c -d:release --opt:size -o:likha-pdf app.nim
+COPY src/ .
 
 RUN mkdir -p generated uploads
 
-EXPOSE 5000
+EXPOSE 5001
 
-CMD ["./likha-pdf"]
+CMD ["python3", "app.py"]

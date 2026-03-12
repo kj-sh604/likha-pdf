@@ -1,20 +1,21 @@
 # likha-pdf
 
-a simple and crappy web app that converts markdown to pdf using pandoc and lualatex.
+a simple web app that converts markdown to pdf.
 
 <img width="1440" height="1080" alt="likha-pdf screenshot" src="https://github.com/user-attachments/assets/9fa15803-f0da-43d0-8a82-0fc490f3d5ff" />
 
 ## features
 
 - markdown to pdf export
-- crappy image upload (but it works)
-- emoji-capable latex template
+- image upload with markdown snippet insertion
+- paper size, margin, font, line spacing, and page number options
+- syntax-highlighted code blocks
+- always produces a pdf (reportlab fallback if weasyprint fails)
 
 ## requirements
 
-- nim 1.6+
-- pandoc
-- lualatex
+- python 3.10+
+- system packages: `libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 shared-mime-info`
 
 ## image usage
 
@@ -28,9 +29,9 @@ a simple and crappy web app that converts markdown to pdf using pandoc and luala
 ### local
 
 ```bash
+pip install -r requirements.txt
 cd src/
-nim c -d:release -o:likha-pdf app.nim
-./likha-pdf
+python3 app.py
 ```
 
 ### docker
@@ -40,4 +41,4 @@ docker build -t likha-pdf .
 docker run -p 5001:5001 likha-pdf
 ```
 
-open `http://localhost:5000`
+open `http://localhost:5001`
