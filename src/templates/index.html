@@ -86,9 +86,10 @@
 
         <label for="margin">Margins</label>
         <select id="margin" name="margin">
-          <option value="0.25in">Ultra Narrow (0.25 in)</option>
-          <option value="0.5in">Very Narrow (0.5 in)</option>
-          <option value="0.75in">Narrow (0.75 in)</option>
+          <option value="0.25in">Tight (0.25 in)</option>
+          <option value="0.35in">Slim (0.35 in)</option>
+          <option value="0.5in">Half (0.5 in)</option>
+          <option value="0.75in">3/4ths (0.75 in)</option>
           <option value="1in" selected>Standard (1.0 in)</option>
           <option value="1.25in">Comfortable (1.25 in)</option>
           <option value="1.5in">Wide (1.5 in)</option>
@@ -108,12 +109,17 @@
         <label for="line_spacing">Line spacing</label>
         <select id="line_spacing" name="line_spacing">
           <option value="1" selected>Single (1.0)</option>
+          <option value="1.15">Relaxed (1.15)</option>
           <option value="1.5">One-and-a-half (1.5)</option>
           <option value="2">Double (2.0)</option>
         </select>
 
         <label>
           <input type="checkbox" name="page_numbers" value="on" checked /> show page numbers
+        </label>
+
+        <label>
+          <input type="checkbox" name="disable_syntax_highlighting" value="on" /> disable syntax highlighting for code blocks
         </label>
       </section>
 

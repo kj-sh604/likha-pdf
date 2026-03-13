@@ -43,9 +43,9 @@ VALID_PAPER_SIZES = {
     "ledgerpaper", "tabloid", "statement", "flsa",
 }
 
-VALID_MARGINS = {"0.25in", "0.5in", "0.75in", "1in", "1.25in", "1.5in", "1.75in"}
+VALID_MARGINS = {"0.25in", "0.35in", "0.5in", "0.75in", "1in", "1.25in", "1.5in", "1.75in"}
 
-VALID_LINE_SPACINGS = {"1", "1.5", "2"}
+VALID_LINE_SPACINGS = {"1", "1.15", "1.5", "2"}
 
 # css page dimensions for each paper size
 PAPER_CSS = {
@@ -75,10 +75,9 @@ PAPER_CSS = {
     "flsa":             "8.5in 13in",
 }
 
-MARKDOWN_EXTENSIONS = [
+MARKDOWN_BASE_EXTENSIONS = [
     "tables",
     "fenced_code",
-    "codehilite",
     "nl2br",
     "sane_lists",
     "smarty",
@@ -284,12 +283,18 @@ li {{
 
 
 # pdf conversion
-def markdown_to_html(source):
+def markdown_to_html(source, enable_syntax_highlighting=True):
     """convert markdown text to an html fragment"""
+    extensions = list(MARKDOWN_BASE_EXTENSIONS)
+    extension_configs = {}
+    if enable_syntax_highlighting:
+        extensions.append("codehilite")
+        extension_configs = MARKDOWN_EXT_CONFIG
+
     return markdown(
         source,
-        extensions=MARKDOWN_EXTENSIONS,
-        extension_configs=MARKDOWN_EXT_CONFIG,
+        extensions=extensions,
+        extension_configs=extension_configs,
     )
 
 
@@ -352,7 +357,7 @@ def convert_with_reportlab(source_markdown, output_path, paper_size, margin,
     }
 
     margin_map = {
-        "0.25in": 0.25 * inch, "0.5in": 0.5 * inch, "0.75in": 0.75 * inch,
+        "0.25in": 0.25 * inch, "0.35in": 0.35 * inch, "0.5in": 0.5 * inch, "0.75in": 0.75 * inch,
         "1in": 1.0 * inch, "1.25in": 1.25 * inch, "1.5in": 1.5 * inch,
         "1.75in": 1.75 * inch,
     }
@@ -442,9 +447,10 @@ def convert_with_reportlab(source_markdown, output_path, paper_size, margin,
 
 
 def generate_pdf(source_markdown, output_path, paper_size, margin,
-                 font_family, line_spacing, show_page_numbers):
+                 font_family, line_spacing, show_page_numbers,
+                 enable_syntax_highlighting):
     """convert markdown to pdf. always produces a file."""
-    body_html = markdown_to_html(source_markdown)
+    body_html = markdown_to_html(source_markdown, enable_syntax_highlighting)
     css = build_pdf_css(paper_size, margin, font_family, line_spacing, show_page_numbers)
     full_html = build_full_html(body_html, css)
 
@@ -526,6 +532,7 @@ def create_app():
             request.form.get("line_spacing", ""), "1", VALID_LINE_SPACINGS,
         )
         show_page_numbers = request.form.get("page_numbers") == "on"
+        disable_syntax_highlighting = request.form.get("disable_syntax_highlighting") == "on"
 
         output_name = f"{APP_NAME}_{int(time.time())}_{random_hex()}.pdf"
         output_path = GENERATED_DIR / output_name
@@ -538,6 +545,7 @@ def create_app():
             font_family,
             line_spacing,
             show_page_numbers,
+            not disable_syntax_highlighting,
         )
 
         if not ok:
