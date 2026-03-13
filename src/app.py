@@ -36,43 +36,71 @@ STATIC_DIR = BASE_DIR / "static"
 ALLOWED_IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp", "svg"}
 
 VALID_PAPER_SIZES = {
-    "a0paper", "a1paper", "a2paper", "a3paper", "a4paper", "a5paper", "a6paper",
-    "b0paper", "b1paper", "b2paper", "b3paper", "b4paper", "b5paper", "b6paper",
-    "c4paper", "c5paper", "c6paper",
-    "letterpaper", "legalpaper", "executivepaper",
-    "ledgerpaper", "tabloid", "statement", "flsa",
+    "a0paper",
+    "a1paper",
+    "a2paper",
+    "a3paper",
+    "a4paper",
+    "a5paper",
+    "a6paper",
+    "b0paper",
+    "b1paper",
+    "b2paper",
+    "b3paper",
+    "b4paper",
+    "b5paper",
+    "b6paper",
+    "c4paper",
+    "c5paper",
+    "c6paper",
+    "letterpaper",
+    "legalpaper",
+    "executivepaper",
+    "ledgerpaper",
+    "tabloid",
+    "statement",
+    "flsa",
 }
 
-VALID_MARGINS = {"0.25in", "0.35in", "0.5in", "0.75in", "1in", "1.25in", "1.5in", "1.75in"}
+VALID_MARGINS = {
+    "0.25in",
+    "0.35in",
+    "0.5in",
+    "0.75in",
+    "1in",
+    "1.25in",
+    "1.5in",
+    "1.75in",
+}
 
 VALID_LINE_SPACINGS = {"1", "1.15", "1.5", "2"}
 
 # css page dimensions for each paper size
 PAPER_CSS = {
-    "a0paper":          "841mm 1189mm",
-    "a1paper":          "594mm 841mm",
-    "a2paper":          "420mm 594mm",
-    "a3paper":          "297mm 420mm",
-    "a4paper":          "210mm 297mm",
-    "a5paper":          "148mm 210mm",
-    "a6paper":          "105mm 148mm",
-    "b0paper":          "1000mm 1414mm",
-    "b1paper":          "707mm 1000mm",
-    "b2paper":          "500mm 707mm",
-    "b3paper":          "353mm 500mm",
-    "b4paper":          "250mm 353mm",
-    "b5paper":          "176mm 250mm",
-    "b6paper":          "125mm 176mm",
-    "c4paper":          "229mm 324mm",
-    "c5paper":          "162mm 229mm",
-    "c6paper":          "114mm 162mm",
-    "letterpaper":      "8.5in 11in",
-    "legalpaper":       "8.5in 14in",
-    "executivepaper":   "7in 10in",
-    "ledgerpaper":      "17in 11in",
-    "tabloid":          "11in 17in",
-    "statement":        "5.5in 8.5in",
-    "flsa":             "8.5in 13in",
+    "a0paper": "841mm 1189mm",
+    "a1paper": "594mm 841mm",
+    "a2paper": "420mm 594mm",
+    "a3paper": "297mm 420mm",
+    "a4paper": "210mm 297mm",
+    "a5paper": "148mm 210mm",
+    "a6paper": "105mm 148mm",
+    "b0paper": "1000mm 1414mm",
+    "b1paper": "707mm 1000mm",
+    "b2paper": "500mm 707mm",
+    "b3paper": "353mm 500mm",
+    "b4paper": "250mm 353mm",
+    "b5paper": "176mm 250mm",
+    "b6paper": "125mm 176mm",
+    "c4paper": "229mm 324mm",
+    "c5paper": "162mm 229mm",
+    "c6paper": "114mm 162mm",
+    "letterpaper": "8.5in 11in",
+    "legalpaper": "8.5in 14in",
+    "executivepaper": "7in 10in",
+    "ledgerpaper": "17in 11in",
+    "tabloid": "11in 17in",
+    "statement": "5.5in 8.5in",
+    "flsa": "8.5in 13in",
 }
 
 MARKDOWN_BASE_EXTENSIONS = [
@@ -132,7 +160,7 @@ def is_allowed_image(filename):
     dot = filename.rfind(".")
     if dot < 1 or dot == len(filename) - 1:
         return False
-    ext = filename[dot + 1:].lower()
+    ext = filename[dot + 1 :].lower()
     return ext in ALLOWED_IMAGE_EXTS
 
 
@@ -159,14 +187,21 @@ def tail_text(value, max_len=1200):
 
 
 # pdf stylesheet generator
-def build_pdf_css(paper_size, margin, font_family, line_spacing, show_page_numbers):
+def build_pdf_css(
+    paper_size,
+    margin,
+    font_family,
+    line_spacing,
+    show_page_numbers,
+    disable_backgrounds,
+):
     """build the css for weasyprint pdf rendering"""
     page_dims = PAPER_CSS.get(paper_size, "8.5in 11in")
 
     if font_family == "sans":
-        font_stack = 'sans-serif'
+        font_stack = "sans-serif"
     else:
-        font_stack = 'serif'
+        font_stack = "serif"
 
     page_number_css = ""
     if show_page_numbers:
@@ -176,6 +211,23 @@ def build_pdf_css(paper_size, margin, font_family, line_spacing, show_page_numbe
             font-size: 9pt;
             color: #666;
         }"""
+
+    code_block_background = "transparent" if disable_backgrounds else "#f5f5f5"
+    code_block_border = "none" if disable_backgrounds else "1px solid #ddd"
+    inline_code_background = "transparent" if disable_backgrounds else "#f0f0f0"
+    table_header_background = "transparent" if disable_backgrounds else "#f5f5f5"
+    codehilite_span_background = "transparent" if disable_backgrounds else "inherit"
+    code_background_reset_css = ""
+    if disable_backgrounds:
+        code_background_reset_css = """
+.highlight,
+.codehilite,
+.highlight pre,
+.codehilite pre,
+pre code {
+    background: transparent !important;
+}
+"""
 
     return f"""
 @page {{
@@ -208,8 +260,8 @@ p {{
 }}
 
 pre {{
-    background: #f5f5f5;
-    border: 1px solid #ddd;
+    background: {code_block_background};
+    border: {code_block_border};
     border-radius: 3px;
     padding: 0.6em;
     font-size: 9pt;
@@ -225,10 +277,16 @@ code {{
 }}
 
 p > code, li > code {{
-    background: #f0f0f0;
+    background: {inline_code_background};
     padding: 0.1em 0.3em;
     border-radius: 2px;
 }}
+
+.highlight span {{
+    background: {codehilite_span_background} !important;
+}}
+
+{code_background_reset_css}
 
 blockquote {{
     border-left: 3px solid #ccc;
@@ -251,7 +309,7 @@ th, td {{
 }}
 
 th {{
-    background: #f5f5f5;
+    background: {table_header_background};
     font-weight: bold;
 }}
 
@@ -327,14 +385,30 @@ def convert_with_weasyprint(full_html, output_path):
         return False, str(exc)
 
 
-def convert_with_reportlab(source_markdown, output_path, paper_size, margin,
-                           font_family, line_spacing):
+def convert_with_reportlab(
+    source_markdown, output_path, paper_size, margin, font_family, line_spacing
+):
     """fallback: produce a basic text pdf with reportlab.
     not pretty, but guarantees a file is always created."""
     from reportlab.lib.pagesizes import (
-        A0, A1, A2, A3, A4, A5, A6,
-        B0, B1, B2, B3, B4, B5, B6,
-        LETTER, LEGAL, LEDGER, TABLOID,
+        A0,
+        A1,
+        A2,
+        A3,
+        A4,
+        A5,
+        A6,
+        B0,
+        B1,
+        B2,
+        B3,
+        B4,
+        B5,
+        B6,
+        LETTER,
+        LEGAL,
+        LEDGER,
+        TABLOID,
     )
     from reportlab.lib.units import inch, mm
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Preformatted
@@ -342,13 +416,25 @@ def convert_with_reportlab(source_markdown, output_path, paper_size, margin,
     from reportlab.lib.enums import TA_LEFT
 
     size_map = {
-        "a0paper": A0, "a1paper": A1, "a2paper": A2, "a3paper": A3,
-        "a4paper": A4, "a5paper": A5, "a6paper": A6,
-        "b0paper": B0, "b1paper": B1, "b2paper": B2, "b3paper": B3,
-        "b4paper": B4, "b5paper": B5, "b6paper": B6,
-        "letterpaper": LETTER, "legalpaper": LEGAL,
+        "a0paper": A0,
+        "a1paper": A1,
+        "a2paper": A2,
+        "a3paper": A3,
+        "a4paper": A4,
+        "a5paper": A5,
+        "a6paper": A6,
+        "b0paper": B0,
+        "b1paper": B1,
+        "b2paper": B2,
+        "b3paper": B3,
+        "b4paper": B4,
+        "b5paper": B5,
+        "b6paper": B6,
+        "letterpaper": LETTER,
+        "legalpaper": LEGAL,
         "executivepaper": (7 * inch, 10 * inch),
-        "ledgerpaper": LEDGER, "tabloid": TABLOID,
+        "ledgerpaper": LEDGER,
+        "tabloid": TABLOID,
         "statement": (5.5 * inch, 8.5 * inch),
         "flsa": (8.5 * inch, 13 * inch),
         "c4paper": (229 * mm, 324 * mm),
@@ -357,8 +443,13 @@ def convert_with_reportlab(source_markdown, output_path, paper_size, margin,
     }
 
     margin_map = {
-        "0.25in": 0.25 * inch, "0.35in": 0.35 * inch, "0.5in": 0.5 * inch, "0.75in": 0.75 * inch,
-        "1in": 1.0 * inch, "1.25in": 1.25 * inch, "1.5in": 1.5 * inch,
+        "0.25in": 0.25 * inch,
+        "0.35in": 0.35 * inch,
+        "0.5in": 0.5 * inch,
+        "0.75in": 0.75 * inch,
+        "1in": 1.0 * inch,
+        "1.25in": 1.25 * inch,
+        "1.5in": 1.5 * inch,
         "1.75in": 1.75 * inch,
     }
 
@@ -368,8 +459,10 @@ def convert_with_reportlab(source_markdown, output_path, paper_size, margin,
     doc = SimpleDocTemplate(
         output_path,
         pagesize=pagesize,
-        leftMargin=m, rightMargin=m,
-        topMargin=m, bottomMargin=m,
+        leftMargin=m,
+        rightMargin=m,
+        topMargin=m,
+        bottomMargin=m,
     )
 
     styles = getSampleStyleSheet()
@@ -446,12 +539,27 @@ def convert_with_reportlab(source_markdown, output_path, paper_size, margin,
     doc.build(story)
 
 
-def generate_pdf(source_markdown, output_path, paper_size, margin,
-                 font_family, line_spacing, show_page_numbers,
-                 enable_syntax_highlighting):
+def generate_pdf(
+    source_markdown,
+    output_path,
+    paper_size,
+    margin,
+    font_family,
+    line_spacing,
+    show_page_numbers,
+    enable_syntax_highlighting,
+    disable_backgrounds,
+):
     """convert markdown to pdf. always produces a file."""
     body_html = markdown_to_html(source_markdown, enable_syntax_highlighting)
-    css = build_pdf_css(paper_size, margin, font_family, line_spacing, show_page_numbers)
+    css = build_pdf_css(
+        paper_size,
+        margin,
+        font_family,
+        line_spacing,
+        show_page_numbers,
+        disable_backgrounds,
+    )
     full_html = build_full_html(body_html, css)
 
     ok, err = convert_with_weasyprint(full_html, output_path)
@@ -460,10 +568,16 @@ def generate_pdf(source_markdown, output_path, paper_size, margin,
 
     # weasyprint failed — fall back to reportlab
     try:
-        current_app.logger.warning("weasyprint failed, using reportlab fallback: %s", err)
+        current_app.logger.warning(
+            "weasyprint failed, using reportlab fallback: %s", err
+        )
         convert_with_reportlab(
-            source_markdown, output_path,
-            paper_size, margin, font_family, line_spacing,
+            source_markdown,
+            output_path,
+            paper_size,
+            margin,
+            font_family,
+            line_spacing,
         )
         return True, f"(used fallback renderer) {err}"
     except Exception as fallback_err:
@@ -480,7 +594,9 @@ def create_app():
         static_url_path="/static",
     )
 
-    app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH", str(64 * 1024 * 1024)))
+    app.config["MAX_CONTENT_LENGTH"] = int(
+        os.getenv("MAX_CONTENT_LENGTH", str(64 * 1024 * 1024))
+    )
 
     if env_bool("TRUST_PROXY", default=True):
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
@@ -497,9 +613,15 @@ def create_app():
 
     @app.errorhandler(413)
     def payload_too_large(_err):
-        return read_partial("upload_error.html", {
-            "{{ message }}": "request body too large.",
-        }), 413
+        return (
+            read_partial(
+                "upload_error.html",
+                {
+                    "{{ message }}": "request body too large.",
+                },
+            ),
+            413,
+        )
 
     @app.route("/healthz")
     def healthz():
@@ -513,15 +635,25 @@ def create_app():
     def convert():
         md = request.form.get("markdown", "").strip()
         if not md:
-            return read_partial("error.html", {
-                "{{ message }}": "Markdown content is required.",
-            }), 400
+            return (
+                read_partial(
+                    "error.html",
+                    {
+                        "{{ message }}": "Markdown content is required.",
+                    },
+                ),
+                400,
+            )
 
         paper_size = pick_option(
-            request.form.get("paper_size", ""), "letterpaper", VALID_PAPER_SIZES,
+            request.form.get("paper_size", ""),
+            "letterpaper",
+            VALID_PAPER_SIZES,
         )
         margin = pick_option(
-            request.form.get("margin", ""), "1in", VALID_MARGINS,
+            request.form.get("margin", ""),
+            "1in",
+            VALID_MARGINS,
         )
 
         font_family = request.form.get("main_font", "serif")
@@ -529,10 +661,15 @@ def create_app():
             font_family = "serif"
 
         line_spacing = pick_option(
-            request.form.get("line_spacing", ""), "1", VALID_LINE_SPACINGS,
+            request.form.get("line_spacing", ""),
+            "1",
+            VALID_LINE_SPACINGS,
         )
         show_page_numbers = request.form.get("page_numbers") == "on"
-        disable_syntax_highlighting = request.form.get("disable_syntax_highlighting") == "on"
+        disable_syntax_highlighting = (
+            request.form.get("disable_syntax_highlighting") == "on"
+        )
+        disable_backgrounds = request.form.get("disable_backgrounds") == "on"
 
         output_name = f"{APP_NAME}_{int(time.time())}_{random_hex()}.pdf"
         output_path = GENERATED_DIR / output_name
@@ -546,32 +683,54 @@ def create_app():
             line_spacing,
             show_page_numbers,
             not disable_syntax_highlighting,
+            disable_backgrounds,
         )
 
         if not ok:
             app.logger.error("pdf generation failed: %s", err)
-            return read_partial("error.html", {
-                "{{ message }}": str(escape(tail_text(err))),
-            }), 500
+            return (
+                read_partial(
+                    "error.html",
+                    {
+                        "{{ message }}": str(escape(tail_text(err))),
+                    },
+                ),
+                500,
+            )
 
-        return read_partial("result.html", {
-            "{{ filename }}": str(escape(output_name)),
-            "{{ download_url }}": f"/download/{output_name}",
-        })
+        return read_partial(
+            "result.html",
+            {
+                "{{ filename }}": str(escape(output_name)),
+                "{{ download_url }}": f"/download/{output_name}",
+            },
+        )
 
     @app.route("/upload-image", methods=["POST"])
     def upload_image():
         uploaded = request.files.get("image")
         if not uploaded or not uploaded.filename or not uploaded.filename.strip():
-            return read_partial("upload_error.html", {
-                "{{ message }}": "image file is required.",
-            }), 400
+            return (
+                read_partial(
+                    "upload_error.html",
+                    {
+                        "{{ message }}": "image file is required.",
+                    },
+                ),
+                400,
+            )
 
         original = sanitize_filename(uploaded.filename)
         if not original or not is_allowed_image(original):
-            return read_partial("upload_error.html", {
-                "{{ message }}": "unsupported image type.",
-            }), 400
+            return (
+                read_partial(
+                    "upload_error.html",
+                    {
+                        "{{ message }}": "unsupported image type.",
+                    },
+                ),
+                400,
+            )
 
         ext = original.rsplit(".", 1)[-1].lower()
         stored_name = f"img_{int(time.time())}_{random_hex()}.{ext}"
@@ -579,11 +738,14 @@ def create_app():
         uploaded.save(str(image_path))
 
         snippet = f"![](uploads/{stored_name})"
-        return read_partial("upload_result.html", {
-            "{{ filename }}": str(escape(stored_name)),
-            "{{ markdown_snippet }}": str(escape(snippet)),
-            "{{ preview_url }}": f"/uploads/{stored_name}",
-        })
+        return read_partial(
+            "upload_result.html",
+            {
+                "{{ filename }}": str(escape(stored_name)),
+                "{{ markdown_snippet }}": str(escape(snippet)),
+                "{{ preview_url }}": f"/uploads/{stored_name}",
+            },
+        )
 
     @app.route("/uploads/<path:filename>")
     def serve_upload(filename):
