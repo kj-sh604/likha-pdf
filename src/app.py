@@ -164,9 +164,9 @@ def build_pdf_css(paper_size, margin, font_family, line_spacing, show_page_numbe
     page_dims = PAPER_CSS.get(paper_size, "8.5in 11in")
 
     if font_family == "sans":
-        font_stack = '"Helvetica Neue", Helvetica, Arial, "Noto Sans", sans-serif'
+        font_stack = 'sans-serif'
     else:
-        font_stack = '"Georgia", "Noto Serif", "Times New Roman", serif'
+        font_stack = 'serif'
 
     page_number_css = ""
     if show_page_numbers:
@@ -220,7 +220,7 @@ pre {{
 }}
 
 code {{
-    font-family: "Courier New", Courier, "Liberation Mono", monospace;
+    font-family: monospace;
     font-size: 9pt;
 }}
 
