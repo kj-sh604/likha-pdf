@@ -38,6 +38,21 @@ document.body.addEventListener("htmx:afterRequest", (event) => {
   }
 });
 
+document.body.addEventListener("htmx:afterSwap", (event) => {
+  const target = event.detail?.target;
+  const requestElt = event.detail?.requestConfig?.elt;
+
+  if (!(target instanceof HTMLElement) || target.id !== "result") {
+    return;
+  }
+
+  if (!(requestElt instanceof HTMLElement) || requestElt.id !== "convert-form") {
+    return;
+  }
+
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
 if (mdFileInput) {
   mdFileInput.addEventListener("change", () => {
     const file = mdFileInput.files?.[0];
