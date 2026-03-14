@@ -200,7 +200,7 @@ def build_pdf_css(
 
     if font_family == "sans":
         font_stack = (
-            '"TeX Gyre Heros", "CMU Sans Serif", "Liberation Sans", FreeSans, "Droid Sans", '
+            '"Liberation Sans", "TeX Gyre Heros", "CMU Sans Serif", FreeSans, "Droid Sans", '
             '"Segoe UI Variable", "Segoe UI", Tahoma, "SF Pro Text", '
             '"SF Pro Display", "Helvetica Neue", Helvetica, Arial, '
             '"Lucida Grande", sans-serif'
@@ -215,7 +215,7 @@ def build_pdf_css(
         )
     else:
         font_stack = (
-            '"CMU Serif", "TeX Gyre Termes", "Liberation Serif", FreeSerif, '
+            '"CMU Serif", "Liberation Serif", "TeX Gyre Termes", FreeSerif, '
             '"Nimbus Roman", "Droid Serif", "Times New Roman", Cambria, '
             'Constantia, Georgia, "New York", Garamond, "Times", '
             'Palatino, "Book Antiqua", serif'
