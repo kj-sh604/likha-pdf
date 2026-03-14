@@ -5,6 +5,10 @@ a simple web app that converts markdown to pdf.
 <img width="1280" height="800" alt="likha-pdf screenshot" src="https://github.com/user-attachments/assets/578b8410-53ad-4323-a45a-19ae3aabe61d" />
 
 
+> this project originally started as a way for me to learn NimLang, but I found it useful enough that I decided to rewrite it in Python for easier personal maintenance 😅  
+
+> the original Nim source files are still available in the `__legacy_src` directory
+
 ## features
 
 - markdown to pdf export
