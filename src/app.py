@@ -200,6 +200,8 @@ def build_pdf_css(
 
     if font_family == "sans":
         font_stack = "sans-serif"
+    elif font_family == "system-ui":
+        font_stack = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
     else:
         font_stack = "serif"
 
@@ -466,7 +468,9 @@ def convert_with_reportlab(
     )
 
     styles = getSampleStyleSheet()
-    font_name = "Helvetica" if font_family == "sans" else "Times-Roman"
+    font_name = (
+        "Helvetica" if font_family in ("sans", "system-ui") else "Times-Roman"
+    )
     spacing_val = float(line_spacing) if line_spacing else 1.0
 
     body_style = ParagraphStyle(
@@ -657,7 +661,7 @@ def create_app():
         )
 
         font_family = request.form.get("main_font", "serif")
-        if font_family not in ("serif", "sans"):
+        if font_family not in ("serif", "sans", "system-ui"):
             font_family = "serif"
 
         line_spacing = pick_option(
