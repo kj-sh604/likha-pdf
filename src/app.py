@@ -199,11 +199,27 @@ def build_pdf_css(
     page_dims = PAPER_CSS.get(paper_size, "8.5in 11in")
 
     if font_family == "sans":
-        font_stack = "sans-serif"
+        font_stack = (
+            '"TeX Gyre Heros", "CMU Sans Serif", "Liberation Sans", FreeSans, "Droid Sans", '
+            '"Segoe UI Variable", "Segoe UI", Tahoma, "SF Pro Text", '
+            '"SF Pro Display", "Helvetica Neue", Helvetica, Arial, '
+            '"Lucida Grande", sans-serif'
+        )
     elif font_family == "system-ui":
-        font_stack = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
+        font_stack = (
+            '"Adwaita Sans", "Cantarell", "Ubuntu", "Liberation Sans", '
+            'FreeSans, "Droid Sans", "Segoe UI Variable", "Segoe UI", '
+            'Tahoma, "SF Pro Text", "SF Pro Display", "Helvetica Neue", '
+            'Helvetica, Arial, "Lucida Grande", system-ui, '
+            '-apple-system, BlinkMacSystemFont, sans-serif'
+        )
     else:
-        font_stack = "serif"
+        font_stack = (
+            '"CMU Serif", "TeX Gyre Termes", "Liberation Serif", FreeSerif, '
+            '"Nimbus Roman", "Droid Serif", "Times New Roman", Cambria, '
+            'Constantia, Georgia, "New York", Garamond, "Times", '
+            'Palatino, "Book Antiqua", serif'
+        )
 
     page_number_css = ""
     if show_page_numbers:
@@ -274,7 +290,7 @@ pre {{
 }}
 
 code {{
-    font-family: monospace;
+    font-family: "Roboto Mono", "JetBrains Mono", "Ubuntu Mono", "Liberation Mono", "Nimbus Mono PS", "Droid Sans Mono", "Source Code Pro", "Fira Code", Hack, Consolas, "Cascadia Mono", "Courier New", "SF Mono", Menlo, Monaco, ui-monospace, monospace;
     font-size: 9pt;
 }}
 
@@ -468,9 +484,7 @@ def convert_with_reportlab(
     )
 
     styles = getSampleStyleSheet()
-    font_name = (
-        "Helvetica" if font_family in ("sans", "system-ui") else "Times-Roman"
-    )
+    font_name = "Helvetica" if font_family in ("sans", "system-ui") else "Times-Roman"
     spacing_val = float(line_spacing) if line_spacing else 1.0
 
     body_style = ParagraphStyle(
