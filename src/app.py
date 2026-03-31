@@ -649,6 +649,10 @@ def create_app():
     def index():
         return send_from_directory(str(TEMPLATES_DIR), "index.html")
 
+    @app.route("/favicon.svg")
+    def favicon():
+        return send_from_directory(str(BASE_DIR), "favicon.svg")
+
     @app.route("/convert", methods=["POST"])
     def convert():
         md = request.form.get("markdown", "").strip()
