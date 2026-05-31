@@ -567,6 +567,31 @@ function clearActivePdfUrl() {
   }
 }
 
+function clearPersistedPdfFilename() {
+  try {
+    localStorage.removeItem(PDF_FILENAME_KEY);
+  } catch {
+    // ignore storage write failures
+  }
+}
+
+function clearReadyPdfResult() {
+  if (!(resultContainer instanceof HTMLElement)) {
+    return;
+  }
+
+  const readyLink = resultContainer.querySelector("a[download]");
+  if (readyLink) {
+    resultContainer.innerHTML = "";
+  }
+}
+
+function prepareForPdfRegeneration() {
+  clearActivePdfUrl();
+  clearPersistedPdfFilename();
+  clearReadyPdfResult();
+}
+
 function sanitizeDownloadFilename(filename) {
   const epoch = Math.floor(Date.now() / 1000);
   const fallback = `likha-pdf_${epoch}_${randomHex(40)}.pdf`;
@@ -673,6 +698,7 @@ async function handleConvertSubmit(event) {
   }
 
   setConvertLoadingState(true);
+  prepareForPdfRegeneration();
 
   try {
     const { resolvedMarkdown, missingIds } = await resolveLocalImageTokens(markdown);
