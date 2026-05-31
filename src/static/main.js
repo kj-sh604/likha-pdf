@@ -3,7 +3,7 @@ const uploadButton = document.getElementById("upload-button");
 const markdownInput = document.getElementById("markdown");
 const imageInput = document.getElementById("image");
 const convertForm = document.getElementById("convert-form");
-const loadingIndicator = document.getElementById("loading");
+const convertStatusMessage = document.getElementById("convert-status");
 const resultContainer = document.getElementById("result");
 const uploadResultContainer = document.getElementById("upload-result");
 
@@ -11,12 +11,15 @@ const PERSISTENCE_KEY = "likha-pdf:form-state:v1";
 const IMAGE_DB_NAME = "likha-pdf:image-db:v1";
 const IMAGE_DB_VERSION = 1;
 const IMAGE_STORE_NAME = "images";
+const PDF_FILENAME_KEY = "likha-pdf:last-pdf-filename";
+const SNIPPET_DETAILS_OPEN_KEY = "likha-pdf:snippet-details-open:v1";
 const LOCAL_IMAGE_SCHEME = "local-image://";
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 const MAX_STORAGE_BYTES = 25 * 1024 * 1024 * 1024;
 const MAX_CONVERT_REQUEST_BYTES = 512 * 1024 * 1024;
 const LOCAL_IMAGE_TOKEN_PATTERN = /local-image:\/\/([a-zA-Z0-9-]+)/g;
 const ALLOWED_IMAGE_EXT_PATTERN = /\.(png|jpe?g|gif|webp|svg)$/i;
+let snippetDetailsIsOpen = readPersistedBoolean(SNIPPET_DETAILS_OPEN_KEY, false);
 
 function readPersistedState() {
   try {
@@ -33,6 +36,31 @@ function writePersistedState(value) {
   } catch {
     // ignore persistence failures in restricted storage contexts
   }
+}
+
+function readPersistedBoolean(key, fallback = false) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) {
+      return fallback;
+    }
+    return raw === "true";
+  } catch {
+    return fallback;
+  }
+}
+
+function writePersistedBoolean(key, value) {
+  try {
+    localStorage.setItem(key, value ? "true" : "false");
+  } catch {
+    // ignore persistence failures in restricted storage contexts
+  }
+}
+
+function setSnippetDetailsOpen(isOpen) {
+  snippetDetailsIsOpen = Boolean(isOpen);
+  writePersistedBoolean(SNIPPET_DETAILS_OPEN_KEY, snippetDetailsIsOpen);
 }
 
 function collectFormState() {
@@ -134,8 +162,8 @@ function setConvertLoadingState(isLoading) {
     convertButton.textContent = isLoading ? "generating..." : "generate pdf";
   }
 
-  if (loadingIndicator instanceof HTMLElement) {
-    loadingIndicator.hidden = !isLoading;
+  if (convertStatusMessage instanceof HTMLElement) {
+    convertStatusMessage.hidden = !isLoading;
   }
 }
 
@@ -160,6 +188,18 @@ function buildLocalImageSnippet(name, id) {
   return `![${cleanName}](${LOCAL_IMAGE_SCHEME}${id})`;
 }
 
+function insertSnippetIntoMarkdown(snippet) {
+  if (!markdownInput) {
+    return;
+  }
+
+  const needsLeadingNewline = markdownInput.value && !markdownInput.value.endsWith("\n");
+  const prefix = needsLeadingNewline ? "\n" : "";
+  markdownInput.value += `${prefix}${snippet}\n`;
+  markdownInput.focus();
+  collectFormState();
+}
+
 function isAllowedImageFile(file) {
   if (file.type.startsWith("image/")) {
     return true;
@@ -174,6 +214,24 @@ function makeImageId() {
   }
 
   return `img-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function randomHex(length = 40) {
+  const byteLen = Math.ceil(length / 2);
+
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const bytes = new Uint8Array(byteLen);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (value) => value.toString(16).padStart(2, "0"))
+      .join("")
+      .slice(0, length);
+  }
+
+  let out = "";
+  while (out.length < length) {
+    out += Math.random().toString(16).slice(2);
+  }
+  return out.slice(0, length);
 }
 
 function requestToPromise(request) {
@@ -323,42 +381,114 @@ async function resolveLocalImageTokens(markdown) {
   return { resolvedMarkdown, missingIds };
 }
 
-let activePreviewUrl = "";
+async function getImageSnippetHistory() {
+  const db = await openImageDb();
 
-function showUploadError(message) {
-  if (!(uploadResultContainer instanceof HTMLElement)) {
-    return;
+  try {
+    const transaction = db.transaction(IMAGE_STORE_NAME, "readonly");
+    const store = transaction.objectStore(IMAGE_STORE_NAME);
+    const snippets = [];
+
+    await new Promise((resolve, reject) => {
+      const request = store.openCursor();
+
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          resolve();
+          return;
+        }
+
+        const value = cursor.value || {};
+        const id = typeof value.id === "string" ? value.id : "";
+        if (id) {
+          snippets.push({
+            createdAt: Number(value.createdAt) || 0,
+            snippet: buildLocalImageSnippet(value.name, id),
+          });
+        }
+
+        cursor.continue();
+      };
+
+      request.onerror = () =>
+        reject(request.error || new Error("failed to read image snippet history"));
+    });
+
+    await transactionDone(transaction);
+    snippets.sort((a, b) => b.createdAt - a.createdAt);
+    return snippets.map((entry) => entry.snippet);
+  } finally {
+    db.close();
   }
-
-  uploadResultContainer.innerHTML = `
-    <article>
-      <h4>image upload failed</h4>
-      <pre>${escapeHtml(message)}</pre>
-    </article>
-  `;
 }
 
-function showUploadResult(record) {
+function renderSnippetHistory(snippets, heading = "", message = "") {
   if (!(uploadResultContainer instanceof HTMLElement)) {
     return;
   }
 
-  if (activePreviewUrl) {
-    URL.revokeObjectURL(activePreviewUrl);
-    activePreviewUrl = "";
+  if (snippets.length === 0 && !heading && !message) {
+    uploadResultContainer.innerHTML = "";
+    return;
   }
 
-  const snippet = buildLocalImageSnippet(record.name, record.id);
-  activePreviewUrl = URL.createObjectURL(record.blob);
+  const headingHtml = heading ? `<h4>${escapeHtml(heading)}</h4>` : "";
+  const messageHtml = message ? `<p>${escapeHtml(message)}</p>` : "";
+
+  let detailsHtml = "";
+  if (snippets.length > 0) {
+    const openAttr = snippetDetailsIsOpen ? " open" : "";
+    const snippetItems = snippets
+      .map(
+        (snippet) =>
+          `<li style="all: revert;"><code style="all: revert;">${escapeHtml(snippet)}</code></li>`
+      )
+      .join("");
+    detailsHtml = `
+      <br>
+      <details style="all: revert;" data-snippet-history="true"${openAttr}>
+        <summary style="all: revert; cursor: pointer;">images (${snippets.length})</summary>
+        <ol style="all: revert;">${snippetItems}</ol>
+      </details><br>
+    `;
+  }
 
   uploadResultContainer.innerHTML = `
     <article>
-      <h4>image ready for insert</h4>
-      <p><a href="${escapeHtml(activePreviewUrl)}" target="_blank" rel="noreferrer">${escapeHtml(record.name)}</a></p>
-      <p><code id="uploaded-markdown">${escapeHtml(snippet)}</code></p>
-      <button type="button" data-insert-markdown="${escapeHtml(snippet)}" class="insert-markdown">insert into markdown</button>
+      ${headingHtml}
+      ${messageHtml}
+      ${detailsHtml}
     </article>
   `;
+
+  const renderedDetails = uploadResultContainer.querySelector(
+    'details[data-snippet-history="true"]'
+  );
+  if (renderedDetails instanceof HTMLDetailsElement) {
+    renderedDetails.addEventListener("toggle", () => {
+      setSnippetDetailsOpen(renderedDetails.open);
+    });
+  }
+}
+
+async function refreshSnippetHistory(heading = "", message = "") {
+  try {
+    const snippets = await getImageSnippetHistory();
+    renderSnippetHistory(snippets, heading, message);
+  } catch {
+    renderSnippetHistory([], "image upload failed", "unable to load image snippet history.");
+  }
+}
+
+function showUploadError(message) {
+  void refreshSnippetHistory("image upload failed", message);
+}
+
+async function showUploadResult(record) {
+  const snippet = buildLocalImageSnippet(record.name, record.id);
+  insertSnippetIntoMarkdown(snippet);
+  await refreshSnippetHistory("image inserted", record.name || "image");
 }
 
 async function handleInsertImage() {
@@ -401,7 +531,7 @@ async function handleInsertImage() {
     };
 
     await saveImageRecord(record);
-    showUploadResult(record);
+    await showUploadResult(record);
     imageInput.value = "";
   } catch (error) {
     const message =
@@ -423,6 +553,68 @@ function showConvertError(message) {
     <article>
       <h3>Conversion failed</h3>
       <pre>${escapeHtml(message)}</pre>
+    </article>
+  `;
+  resultContainer.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+let activePdfUrl = "";
+
+function clearActivePdfUrl() {
+  if (activePdfUrl) {
+    URL.revokeObjectURL(activePdfUrl);
+    activePdfUrl = "";
+  }
+}
+
+function sanitizeDownloadFilename(filename) {
+  const epoch = Math.floor(Date.now() / 1000);
+  const fallback = `likha-pdf_${epoch}_${randomHex(40)}.pdf`;
+  if (!filename) {
+    return fallback;
+  }
+
+  const sanitized = filename.replaceAll(/[^a-zA-Z0-9._()\- ]/g, "_").trim();
+  return sanitized || fallback;
+}
+
+function getDownloadFilenameFromResponse(response) {
+  const disposition = response.headers.get("content-disposition") || "";
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match && utf8Match[1]) {
+    try {
+      return sanitizeDownloadFilename(decodeURIComponent(utf8Match[1]));
+    } catch {
+      return sanitizeDownloadFilename(utf8Match[1]);
+    }
+  }
+
+  const plainMatch = disposition.match(/filename="?([^";]+)"?/i);
+  if (plainMatch && plainMatch[1]) {
+    return sanitizeDownloadFilename(plainMatch[1]);
+  }
+
+  return sanitizeDownloadFilename("");
+}
+
+function showPdfReady(pdfBlob, downloadFilename) {
+  if (!(resultContainer instanceof HTMLElement)) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(PDF_FILENAME_KEY, downloadFilename);
+  } catch {
+    // ignore storage write failures
+  }
+
+  clearActivePdfUrl();
+  activePdfUrl = URL.createObjectURL(pdfBlob);
+
+  resultContainer.innerHTML = `
+    <article>
+      <h3>pdf ready</h3>
+      <a href="${escapeHtml(activePdfUrl)}" download="${escapeHtml(downloadFilename)}">download pdf</a>
     </article>
   `;
   resultContainer.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -468,6 +660,14 @@ async function handleConvertSubmit(event) {
       body: formData,
     });
 
+    const contentType = (response.headers.get("content-type") || "").toLowerCase();
+    if (response.ok && contentType.includes("application/pdf")) {
+      const pdfBlob = await response.blob();
+      const downloadFilename = getDownloadFilenameFromResponse(response);
+      showPdfReady(pdfBlob, downloadFilename);
+      return;
+    }
+
     const responseHtml = await response.text();
     if (resultContainer instanceof HTMLElement) {
       resultContainer.innerHTML = responseHtml;
@@ -500,26 +700,5 @@ if (uploadButton instanceof HTMLButtonElement) {
   });
 }
 
-document.body.addEventListener("click", (event) => {
-  const target = event.target;
-  if (!(target instanceof HTMLElement)) {
-    return;
-  }
-
-  const button = target.closest("[data-insert-markdown]");
-  if (!(button instanceof HTMLElement) || !markdownInput) {
-    return;
-  }
-
-  const snippet = button.dataset.insertMarkdown;
-  if (!snippet) {
-    return;
-  }
-
-  const needsLeadingNewline = markdownInput.value && !markdownInput.value.endsWith("\n");
-  const prefix = needsLeadingNewline ? "\n" : "";
-  markdownInput.value += `${prefix}${snippet}\n`;
-  markdownInput.focus();
-  collectFormState();
-});
+void refreshSnippetHistory();
 

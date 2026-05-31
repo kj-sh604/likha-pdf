@@ -4,10 +4,11 @@
 # production-friendly flask app with weasyprint + reportlab fallback
 
 import logging
+import io
 import os
 import secrets
 import time
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from flask import (
     Flask,
@@ -15,7 +16,6 @@ from flask import (
     current_app,
     request,
     send_from_directory,
-    abort,
 )
 from markupsafe import escape
 from markdown import markdown
@@ -29,7 +29,6 @@ DEFAULT_MAX_CONTENT_LENGTH = 512 * 1024 * 1024
 DEFAULT_MAX_FORM_MEMORY_SIZE = DEFAULT_MAX_CONTENT_LENGTH
 
 BASE_DIR = Path(__file__).resolve().parent
-GENERATED_DIR = BASE_DIR / "generated"
 TEMPLATES_DIR = BASE_DIR / "templates"
 PARTIALS_DIR = TEMPLATES_DIR / "partials"
 STATIC_DIR = BASE_DIR / "static"
@@ -130,23 +129,8 @@ def env_bool(name, default=False):
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def ensure_runtime_dirs():
-    GENERATED_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def random_hex(length=32):
-    return secrets.token_hex(length // 2)
-
-
 def pick_option(value, fallback, valid):
     return value if value in valid else fallback
-
-
-def is_safe_relative_path(path_part):
-    if not path_part or "\\" in path_part:
-        return False
-    safe_path = PurePosixPath(path_part)
-    return not safe_path.is_absolute() and ".." not in safe_path.parts
 
 
 def read_partial(name, replacements=None):
@@ -382,21 +366,20 @@ def build_full_html(body_html, css):
 </html>"""
 
 
-def convert_with_weasyprint(full_html, output_path):
-    """render html to pdf via weasyprint. returns (ok, error_msg)."""
+def convert_with_weasyprint(full_html):
+    """render html to pdf via weasyprint. returns (ok, pdf_bytes, error_msg)."""
     try:
         doc = HTML(
             string=full_html,
             base_url=str(BASE_DIR),
         )
-        doc.write_pdf(output_path)
-        return True, ""
+        return True, doc.write_pdf(), ""
     except Exception as exc:
-        return False, str(exc)
+        return False, b"", str(exc)
 
 
 def convert_with_reportlab(
-    source_markdown, output_path, paper_size, margin, font_family, line_spacing
+    source_markdown, paper_size, margin, font_family, line_spacing
 ):
     """fallback: produce a basic text pdf with reportlab.
     not pretty, but guarantees a file is always created."""
@@ -466,8 +449,10 @@ def convert_with_reportlab(
     pagesize = size_map.get(paper_size, LETTER)
     m = margin_map.get(margin, 1.0 * inch)
 
+    buffer = io.BytesIO()
+
     doc = SimpleDocTemplate(
-        output_path,
+        buffer,
         pagesize=pagesize,
         leftMargin=m,
         rightMargin=m,
@@ -547,11 +532,11 @@ def convert_with_reportlab(
         story.append(Preformatted(code_text, code_style))
 
     doc.build(story)
+    return buffer.getvalue()
 
 
 def generate_pdf(
     source_markdown,
-    output_path,
     paper_size,
     margin,
     font_family,
@@ -572,31 +557,28 @@ def generate_pdf(
     )
     full_html = build_full_html(body_html, css)
 
-    ok, err = convert_with_weasyprint(full_html, output_path)
+    ok, pdf_bytes, err = convert_with_weasyprint(full_html)
     if ok:
-        return True, ""
+        return True, pdf_bytes, ""
 
     # weasyprint failed — fall back to reportlab
     try:
         current_app.logger.warning(
             "weasyprint failed, using reportlab fallback: %s", err
         )
-        convert_with_reportlab(
+        pdf_bytes = convert_with_reportlab(
             source_markdown,
-            output_path,
             paper_size,
             margin,
             font_family,
             line_spacing,
         )
-        return True, f"(used fallback renderer) {err}"
+        return True, pdf_bytes, f"(used fallback renderer) {err}"
     except Exception as fallback_err:
-        return False, f"weasyprint: {err} | reportlab: {fallback_err}"
+        return False, b"", f"weasyprint: {err} | reportlab: {fallback_err}"
 
 
 def create_app():
-    ensure_runtime_dirs()
-
     app = Flask(
         __name__,
         template_folder=str(TEMPLATES_DIR),
@@ -701,12 +683,12 @@ def create_app():
         )
         disable_backgrounds = request.form.get("disable_backgrounds") == "on"
 
-        output_name = f"{APP_NAME}_{int(time.time())}_{random_hex()}.pdf"
-        output_path = GENERATED_DIR / output_name
+        download_name = (
+            f"{APP_NAME}_{int(time.time())}_{secrets.token_hex(20)}.pdf"
+        )
 
-        ok, err = generate_pdf(
+        ok, pdf_bytes, err = generate_pdf(
             md,
-            str(output_path),
             paper_size,
             margin,
             font_family,
@@ -728,25 +710,15 @@ def create_app():
                 500,
             )
 
-        return read_partial(
-            "result.html",
-            {
-                "{{ filename }}": str(escape(output_name)),
-                "{{ download_url }}": f"/download/{output_name}",
-            },
-        )
+        if err:
+            app.logger.warning("pdf generated with fallback renderer: %s", err)
 
-    @app.route("/download/<path:filename>")
-    def download(filename):
-        if not is_safe_relative_path(filename):
-            abort(400)
-        return send_from_directory(
-            str(GENERATED_DIR),
-            filename,
-            as_attachment=True,
-            download_name=filename,
-            conditional=True,
+        response = Response(pdf_bytes, mimetype="application/pdf")
+        response.headers["Content-Disposition"] = (
+            f'attachment; filename="{download_name}"'
         )
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     return app
 
