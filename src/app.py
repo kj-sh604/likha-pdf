@@ -7,8 +7,12 @@ import logging
 import io
 import os
 import secrets
+import sqlite3
 import time
+from collections import deque
 from pathlib import Path
+from threading import Lock
+from urllib.parse import urlsplit
 
 from flask import (
     Flask,
@@ -19,14 +23,33 @@ from flask import (
 )
 from markupsafe import escape
 from markdown import markdown
-from weasyprint import HTML
+from weasyprint import HTML, default_url_fetcher
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 APP_NAME = "likha-pdf"
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 5001
-DEFAULT_MAX_CONTENT_LENGTH = 512 * 1024 * 1024
+DEFAULT_MAX_CONTENT_LENGTH = 2048 * 1024 * 1024
 DEFAULT_MAX_FORM_MEMORY_SIZE = DEFAULT_MAX_CONTENT_LENGTH
+DEFAULT_CONVERT_RATE_LIMIT_REQUESTS = 5
+DEFAULT_CONVERT_RATE_LIMIT_WINDOW_SECONDS = 60
+DEFAULT_CONVERT_RATE_LIMIT_DB_PATH = "/tmp/likha-pdf-rate-limit.sqlite3"
+DEFAULT_CONVERT_RATE_LIMIT_DB_WAL_AUTOCHECKPOINT_PAGES = 256
+DEFAULT_CONVERT_RATE_LIMIT_DB_JOURNAL_SIZE_LIMIT_BYTES = 2 * 1024 * 1024
+DEFAULT_CONVERT_RATE_LIMIT_DB_CACHE_SIZE_KIB = 2048
+
+DEFAULT_CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "base-uri 'none'; "
+    "frame-ancestors 'none'; "
+    "form-action 'self'; "
+    "object-src 'none'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "img-src 'self' data: blob: https:; "
+    "font-src 'self' data: https://cdn.jsdelivr.net; "
+    "connect-src 'self'"
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
@@ -129,6 +152,19 @@ def env_bool(name, default=False):
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def env_int(name, default, minimum=1):
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        parsed = int(raw.strip())
+    except ValueError:
+        return default
+    if parsed < minimum:
+        return minimum
+    return parsed
+
+
 def pick_option(value, fallback, valid):
     return value if value in valid else fallback
 
@@ -160,6 +196,180 @@ def format_bytes(num_bytes):
             return f"{value:.2f} {unit}"
 
     return f"{value:.2f} PB"
+
+
+def safe_weasy_url_fetcher(url, *args, **kwargs):
+    """allow only data urls, block file/network/relative resources"""
+    scheme = (urlsplit(url).scheme or "").lower()
+    if scheme == "data":
+        return default_url_fetcher(url, *args, **kwargs)
+    raise ValueError("blocked non-data resource url")
+
+
+class SlidingWindowRateLimiter:
+    def __init__(
+        self,
+        max_requests,
+        window_seconds,
+        db_path=None,
+        wal_autocheckpoint_pages=DEFAULT_CONVERT_RATE_LIMIT_DB_WAL_AUTOCHECKPOINT_PAGES,
+        journal_size_limit_bytes=DEFAULT_CONVERT_RATE_LIMIT_DB_JOURNAL_SIZE_LIMIT_BYTES,
+        cache_size_kib=DEFAULT_CONVERT_RATE_LIMIT_DB_CACHE_SIZE_KIB,
+    ):
+        self.max_requests = max_requests
+        self.window_seconds = float(window_seconds)
+        self.db_path = Path(db_path).expanduser() if db_path else None
+        self.wal_autocheckpoint_pages = int(wal_autocheckpoint_pages)
+        self.journal_size_limit_bytes = int(journal_size_limit_bytes)
+        self.cache_size_kib = int(cache_size_kib)
+
+        self._events = {}
+        self._memory_lock = Lock()
+        self._memory_next_cleanup_at = 0.0
+        self._schema_lock = Lock()
+        self._schema_ready = False
+
+        if self.db_path is not None:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _allow_memory(self, key):
+        now = time.monotonic()
+        window_start = now - self.window_seconds
+
+        with self._memory_lock:
+            if now >= self._memory_next_cleanup_at:
+                stale_keys = []
+                for event_key, entries in self._events.items():
+                    while entries and entries[0] <= window_start:
+                        entries.popleft()
+                    if not entries:
+                        stale_keys.append(event_key)
+
+                for stale_key in stale_keys:
+                    self._events.pop(stale_key, None)
+
+                self._memory_next_cleanup_at = now + min(self.window_seconds, 30.0)
+
+            entries = self._events.get(key)
+            if entries is None:
+                entries = deque()
+                self._events[key] = entries
+
+            while entries and entries[0] <= window_start:
+                entries.popleft()
+
+            if len(entries) >= self.max_requests:
+                retry_after = max(1, int(self.window_seconds - (now - entries[0])))
+                return False, retry_after
+
+            entries.append(now)
+
+        return True, 0
+
+    def _connect_db(self):
+        conn = sqlite3.connect(str(self.db_path), timeout=5.0, isolation_level=None)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute(f"PRAGMA wal_autocheckpoint={self.wal_autocheckpoint_pages}")
+        conn.execute(f"PRAGMA journal_size_limit={self.journal_size_limit_bytes}")
+        conn.execute(f"PRAGMA cache_size={-self.cache_size_kib}")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
+
+    def _ensure_schema(self):
+        if self._schema_ready:
+            return
+
+        with self._schema_lock:
+            if self._schema_ready:
+                return
+
+            conn = self._connect_db()
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS rate_limit_events (
+                        bucket_key TEXT NOT NULL,
+                        event_ts REAL NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_rate_limit_events_key_ts
+                    ON rate_limit_events (bucket_key, event_ts)
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_rate_limit_events_ts
+                    ON rate_limit_events (event_ts)
+                    """
+                )
+            finally:
+                conn.close()
+
+            self._schema_ready = True
+
+    def _allow_sqlite(self, key):
+        now = time.time()
+        window_start = now - self.window_seconds
+        try:
+            self._ensure_schema()
+            conn = self._connect_db()
+        except sqlite3.Error as exc:
+            logging.getLogger(APP_NAME).warning(
+                "rate limiter sqlite init error, using memory fallback: %s", exc
+            )
+            return self._allow_memory(key)
+
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                "DELETE FROM rate_limit_events WHERE event_ts <= ?",
+                (window_start,),
+            )
+
+            row = conn.execute(
+                """
+                SELECT COUNT(*), MIN(event_ts)
+                FROM rate_limit_events
+                WHERE bucket_key = ? AND event_ts > ?
+                """,
+                (key, window_start),
+            ).fetchone()
+            count = int(row[0] or 0)
+            oldest = float(row[1]) if row and row[1] is not None else now
+
+            if count >= self.max_requests:
+                retry_after = max(1, int(self.window_seconds - (now - oldest)))
+                conn.execute("COMMIT")
+                return False, retry_after
+
+            conn.execute(
+                "INSERT INTO rate_limit_events (bucket_key, event_ts) VALUES (?, ?)",
+                (key, now),
+            )
+            conn.execute("COMMIT")
+            return True, 0
+        except sqlite3.Error as exc:
+            try:
+                conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass
+
+            logging.getLogger(APP_NAME).warning(
+                "rate limiter sqlite error, using memory fallback: %s", exc
+            )
+            return self._allow_memory(key)
+        finally:
+            conn.close()
+
+    def allow(self, key):
+        if self.db_path is None:
+            return self._allow_memory(key)
+        return self._allow_sqlite(key)
 
 
 # pdf stylesheet generator
@@ -371,7 +581,7 @@ def convert_with_weasyprint(full_html):
     try:
         doc = HTML(
             string=full_html,
-            base_url=str(BASE_DIR),
+            url_fetcher=safe_weasy_url_fetcher,
         )
         return True, doc.write_pdf(), ""
     except Exception as exc:
@@ -596,7 +806,66 @@ def create_app():
     app.config["MAX_CONTENT_LENGTH"] = max_content_length
     app.config["MAX_FORM_MEMORY_SIZE"] = max_form_memory_size
 
-    if env_bool("TRUST_PROXY", default=True):
+    convert_rate_limit_requests = env_int(
+        "CONVERT_RATE_LIMIT_REQUESTS",
+        DEFAULT_CONVERT_RATE_LIMIT_REQUESTS,
+        minimum=1,
+    )
+    convert_rate_limit_window_seconds = env_int(
+        "CONVERT_RATE_LIMIT_WINDOW_SECONDS",
+        DEFAULT_CONVERT_RATE_LIMIT_WINDOW_SECONDS,
+        minimum=1,
+    )
+    convert_rate_limit_db_path = os.getenv(
+        "CONVERT_RATE_LIMIT_DB_PATH",
+        DEFAULT_CONVERT_RATE_LIMIT_DB_PATH,
+    ).strip()
+    if convert_rate_limit_db_path.lower() in {"", "memory", "in-memory", "none"}:
+        convert_rate_limit_db_path = ""
+
+    convert_rate_limit_db_wal_autocheckpoint_pages = env_int(
+        "CONVERT_RATE_LIMIT_DB_WAL_AUTOCHECKPOINT_PAGES",
+        DEFAULT_CONVERT_RATE_LIMIT_DB_WAL_AUTOCHECKPOINT_PAGES,
+        minimum=1,
+    )
+    convert_rate_limit_db_journal_size_limit_bytes = env_int(
+        "CONVERT_RATE_LIMIT_DB_JOURNAL_SIZE_LIMIT_BYTES",
+        DEFAULT_CONVERT_RATE_LIMIT_DB_JOURNAL_SIZE_LIMIT_BYTES,
+        minimum=64 * 1024,
+    )
+    convert_rate_limit_db_cache_size_kib = env_int(
+        "CONVERT_RATE_LIMIT_DB_CACHE_SIZE_KIB",
+        DEFAULT_CONVERT_RATE_LIMIT_DB_CACHE_SIZE_KIB,
+        minimum=256,
+    )
+
+    convert_rate_limiter = SlidingWindowRateLimiter(
+        max_requests=convert_rate_limit_requests,
+        window_seconds=convert_rate_limit_window_seconds,
+        db_path=convert_rate_limit_db_path or None,
+        wal_autocheckpoint_pages=convert_rate_limit_db_wal_autocheckpoint_pages,
+        journal_size_limit_bytes=convert_rate_limit_db_journal_size_limit_bytes,
+        cache_size_kib=convert_rate_limit_db_cache_size_kib,
+    )
+
+    app.config["CONVERT_RATE_LIMIT_REQUESTS"] = convert_rate_limit_requests
+    app.config["CONVERT_RATE_LIMIT_WINDOW_SECONDS"] = (
+        convert_rate_limit_window_seconds
+    )
+    app.config["CONVERT_RATE_LIMIT_DB_PATH"] = convert_rate_limit_db_path or "memory"
+    app.config["CONVERT_RATE_LIMIT_DB_WAL_AUTOCHECKPOINT_PAGES"] = (
+        convert_rate_limit_db_wal_autocheckpoint_pages
+    )
+    app.config["CONVERT_RATE_LIMIT_DB_JOURNAL_SIZE_LIMIT_BYTES"] = (
+        convert_rate_limit_db_journal_size_limit_bytes
+    )
+    app.config["CONVERT_RATE_LIMIT_DB_CACHE_SIZE_KIB"] = (
+        convert_rate_limit_db_cache_size_kib
+    )
+
+    trust_proxy = env_bool("TRUST_PROXY", default=False)
+    app.config["TRUST_PROXY"] = trust_proxy
+    if trust_proxy:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -607,6 +876,7 @@ def create_app():
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("X-Frame-Options", "DENY")
         resp.headers.setdefault("Referrer-Policy", "no-referrer")
+        resp.headers.setdefault("Content-Security-Policy", DEFAULT_CONTENT_SECURITY_POLICY)
         return resp
 
     @app.errorhandler(413)
@@ -645,6 +915,24 @@ def create_app():
 
     @app.route("/convert", methods=["POST"])
     def convert():
+        rate_limit_key = f"ip:{request.remote_addr or 'unknown'}"
+        is_allowed, retry_after = convert_rate_limiter.allow(rate_limit_key)
+        if not is_allowed:
+            response = Response(
+                read_partial(
+                    "error.html",
+                    {
+                        "{{ message }}": (
+                            "too many conversion requests. please wait and try again."
+                        ),
+                    },
+                ),
+                status=429,
+                mimetype="text/html",
+            )
+            response.headers["Retry-After"] = str(retry_after)
+            return response
+
         md = request.form.get("markdown", "").strip()
         if not md:
             return (

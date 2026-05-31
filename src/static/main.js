@@ -16,7 +16,7 @@ const SNIPPET_DETAILS_OPEN_KEY = "likha-pdf:snippet-details-open:v1";
 const LOCAL_IMAGE_SCHEME = "local-image://";
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 const MAX_STORAGE_BYTES = 25 * 1024 * 1024 * 1024;
-const MAX_CONVERT_REQUEST_BYTES = 512 * 1024 * 1024;
+const MAX_CONVERT_REQUEST_BYTES = 2048 * 1024 * 1024;
 const LOCAL_IMAGE_TOKEN_PATTERN = /local-image:\/\/([a-zA-Z0-9-]+)/g;
 const ALLOWED_IMAGE_EXT_PATTERN = /\.(png|jpe?g|gif|webp|svg)$/i;
 let snippetDetailsIsOpen = readPersistedBoolean(SNIPPET_DETAILS_OPEN_KEY, false);
@@ -620,6 +620,42 @@ function showPdfReady(pdfBlob, downloadFilename) {
   resultContainer.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function extractErrorMessageFromResponseHtml(html, fallbackMessage = "failed to generate pdf.") {
+  const fallback = String(fallbackMessage || "failed to generate pdf.");
+  if (!html) {
+    return fallback;
+  }
+
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+
+    const preText = doc.querySelector("pre")?.textContent?.trim();
+    if (preText) {
+      return preText;
+    }
+
+    const articleText = doc.querySelector("article")?.textContent?.trim();
+    if (articleText) {
+      return articleText;
+    }
+
+    const bodyText = doc.body?.textContent?.trim();
+    if (bodyText) {
+      return bodyText;
+    }
+  } catch {
+    // ignore parser failures
+  }
+
+  const plain = String(html).replace(/\s+/g, " ").trim();
+  if (!plain) {
+    return fallback;
+  }
+
+  return plain.slice(0, 1200);
+}
+
 async function handleConvertSubmit(event) {
   event.preventDefault();
 
@@ -669,10 +705,12 @@ async function handleConvertSubmit(event) {
     }
 
     const responseHtml = await response.text();
-    if (resultContainer instanceof HTMLElement) {
-      resultContainer.innerHTML = responseHtml;
-      resultContainer.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    showConvertError(
+      extractErrorMessageFromResponseHtml(
+        responseHtml,
+        `conversion failed (${response.status})`
+      )
+    );
   } catch (error) {
     const message =
       error instanceof Error && error.message
