@@ -7,17 +7,6 @@
   <title>likha-pdf</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/kj-sh604/noir.css@latest/out/noir.min.css" />
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-  <style>
-    .htmx-indicator {
-      display: none;
-    }
-
-    .htmx-request .htmx-indicator,
-    .htmx-request.htmx-indicator {
-      display: inline;
-    }
-  </style>
 </head>
 
 <body>
@@ -25,7 +14,7 @@
     <h1>likha-pdf</h1>
     <p>simple markdown to pdf export.</p>
 
-    <form id="convert-form" hx-post="/convert" hx-target="#result" hx-swap="innerHTML" hx-indicator="#loading">
+    <form id="convert-form" action="/convert" method="post">
       <label for="markdown">
         <h3>textarea</h3>
       </label>
@@ -34,17 +23,9 @@
 
       <section id="image-upload-section">
         <label for="image"><small>image file</small></label>
-        <input id="image" name="image" type="file" accept="image/*" />
-        <button id="upload-button" type="button" hx-post="/upload-image" hx-target="#upload-result" hx-swap="innerHTML"
-          hx-encoding="multipart/form-data" hx-include="#image" hx-indicator="#uploading">upload image</button>
-        <small id="uploading" class="htmx-indicator">uploading…</small>
+        <input id="image" type="file" accept="image/*" />
+        <button id="upload-button" type="button">insert image</button>
         <div id="upload-result" aria-live="polite"></div>
-      </section>
-
-      <section id="md-file-section">
-        <h3>or upload a markdown file</h3>
-        <label for="md-file"><small><em>(overrides textarea)</em></small></label>
-        <input id="md-file" type="file" accept=".md,.markdown,text/markdown,text/plain" />
       </section>
 
       <section>
@@ -133,7 +114,7 @@
       </section>
 
       <button id="convert-button" type="submit">generate pdf</button>
-      <small id="loading" class="htmx-indicator">converting…</small>
+      <small id="loading" hidden>converting...</small>
     </form>
 
     <section id="result" aria-live="polite"></section>

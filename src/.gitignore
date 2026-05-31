@@ -3,5 +3,4 @@ __pycache__/
 .venv/
 likha-pdf
 generated/
-uploads/
 launch-likha-ssb

@@ -4,15 +4,10 @@ a simple web app that converts markdown to pdf.
 
 <img width="1280" height="800" alt="likha-pdf screenshot" src="https://github.com/user-attachments/assets/578b8410-53ad-4323-a45a-19ae3aabe61d" />
 
-
-> this project originally started as a way for me to learn NimLang, but I found it useful enough that I decided to rewrite it in Python for easier personal maintenance 😅  
-
-> the original Nim source files are still available in the `__legacy_src` directory
-
 ## features
 
 - markdown to pdf export
-- image upload with markdown snippet insertion
+- local browser image storage with markdown snippet insertion
 - paper size, margin, font, line spacing, and page number options
 - syntax-highlighted code blocks
 - always produces a pdf (reportlab fallback if weasyprint fails)
@@ -25,7 +20,7 @@ a simple web app that converts markdown to pdf.
 
 ## image usage
 
-1. upload an image from the page
+1. store an image locally from the page
 2. click `insert into markdown`
 3. generate pdf
 
@@ -66,12 +61,3 @@ nginx should reverse proxy to `127.0.0.1:5001` and pass:
 - `X-Forwarded-For`
 - `X-Forwarded-Proto`
 - `X-Forwarded-Host`
-
-### docker
-
-```bash
-docker build -t likha-pdf .
-docker run -p 5001:5001 likha-pdf
-```
-
-open `http://localhost:5001`

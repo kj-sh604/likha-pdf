@@ -25,15 +25,14 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 APP_NAME = "likha-pdf"
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 5001
+DEFAULT_MAX_CONTENT_LENGTH = 512 * 1024 * 1024
+DEFAULT_MAX_FORM_MEMORY_SIZE = DEFAULT_MAX_CONTENT_LENGTH
 
 BASE_DIR = Path(__file__).resolve().parent
 GENERATED_DIR = BASE_DIR / "generated"
-UPLOADS_DIR = BASE_DIR / "uploads"
 TEMPLATES_DIR = BASE_DIR / "templates"
 PARTIALS_DIR = TEMPLATES_DIR / "partials"
 STATIC_DIR = BASE_DIR / "static"
-
-ALLOWED_IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp", "svg"}
 
 VALID_PAPER_SIZES = {
     "a0paper",
@@ -133,7 +132,6 @@ def env_bool(name, default=False):
 
 def ensure_runtime_dirs():
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
-    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def random_hex(length=32):
@@ -142,26 +140,6 @@ def random_hex(length=32):
 
 def pick_option(value, fallback, valid):
     return value if value in valid else fallback
-
-
-def sanitize_filename(name):
-    """keep only safe characters in a filename"""
-    name = os.path.basename(name.replace("\\", "/"))
-    out = []
-    for ch in name:
-        if ch.isalnum() or ch in "-_.":
-            out.append(ch)
-        elif ch == " ":
-            out.append("_")
-    return "".join(out)
-
-
-def is_allowed_image(filename):
-    dot = filename.rfind(".")
-    if dot < 1 or dot == len(filename) - 1:
-        return False
-    ext = filename[dot + 1 :].lower()
-    return ext in ALLOWED_IMAGE_EXTS
 
 
 def is_safe_relative_path(path_part):
@@ -184,6 +162,20 @@ def tail_text(value, max_len=1200):
     if len(value) <= max_len:
         return value
     return value[-max_len:]
+
+
+def format_bytes(num_bytes):
+    if num_bytes < 1024:
+        return f"{num_bytes} B"
+
+    units = ["KB", "MB", "GB", "TB"]
+    value = float(num_bytes)
+    for unit in units:
+        value /= 1024.0
+        if value < 1024.0:
+            return f"{value:.2f} {unit}"
+
+    return f"{value:.2f} PB"
 
 
 # pdf stylesheet generator
@@ -612,9 +604,15 @@ def create_app():
         static_url_path="/static",
     )
 
-    app.config["MAX_CONTENT_LENGTH"] = int(
-        os.getenv("MAX_CONTENT_LENGTH", str(64 * 1024 * 1024))
+    max_content_length = int(
+        os.getenv("MAX_CONTENT_LENGTH", str(DEFAULT_MAX_CONTENT_LENGTH))
     )
+    max_form_memory_size = int(
+        os.getenv("MAX_FORM_MEMORY_SIZE", str(DEFAULT_MAX_FORM_MEMORY_SIZE))
+    )
+
+    app.config["MAX_CONTENT_LENGTH"] = max_content_length
+    app.config["MAX_FORM_MEMORY_SIZE"] = max_form_memory_size
 
     if env_bool("TRUST_PROXY", default=True):
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
@@ -631,11 +629,21 @@ def create_app():
 
     @app.errorhandler(413)
     def payload_too_large(_err):
+        content_limit = int(app.config.get("MAX_CONTENT_LENGTH") or 0)
+        form_limit = int(app.config.get("MAX_FORM_MEMORY_SIZE") or 0)
+        content_limit_text = (
+            format_bytes(content_limit) if content_limit else "configured limit"
+        )
+        form_limit_text = format_bytes(form_limit) if form_limit else "unlimited"
         return (
             read_partial(
-                "upload_error.html",
+                "error.html",
                 {
-                    "{{ message }}": "request body too large.",
+                    "{{ message }}": (
+                        "request body too large. "
+                        f"max request size is {content_limit_text}; "
+                        f"max form field memory is {form_limit_text}."
+                    ),
                 },
             ),
             413,
@@ -727,53 +735,6 @@ def create_app():
                 "{{ download_url }}": f"/download/{output_name}",
             },
         )
-
-    @app.route("/upload-image", methods=["POST"])
-    def upload_image():
-        uploaded = request.files.get("image")
-        if not uploaded or not uploaded.filename or not uploaded.filename.strip():
-            return (
-                read_partial(
-                    "upload_error.html",
-                    {
-                        "{{ message }}": "image file is required.",
-                    },
-                ),
-                400,
-            )
-
-        original = sanitize_filename(uploaded.filename)
-        if not original or not is_allowed_image(original):
-            return (
-                read_partial(
-                    "upload_error.html",
-                    {
-                        "{{ message }}": "unsupported image type.",
-                    },
-                ),
-                400,
-            )
-
-        ext = original.rsplit(".", 1)[-1].lower()
-        stored_name = f"img_{int(time.time())}_{random_hex()}.{ext}"
-        image_path = UPLOADS_DIR / stored_name
-        uploaded.save(str(image_path))
-
-        snippet = f"![](uploads/{stored_name})"
-        return read_partial(
-            "upload_result.html",
-            {
-                "{{ filename }}": str(escape(stored_name)),
-                "{{ markdown_snippet }}": str(escape(snippet)),
-                "{{ preview_url }}": f"/uploads/{stored_name}",
-            },
-        )
-
-    @app.route("/uploads/<path:filename>")
-    def serve_upload(filename):
-        if not is_safe_relative_path(filename):
-            abort(400)
-        return send_from_directory(str(UPLOADS_DIR), filename, conditional=True)
 
     @app.route("/download/<path:filename>")
     def download(filename):
