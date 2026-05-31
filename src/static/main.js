@@ -19,6 +19,7 @@ const MAX_STORAGE_BYTES = 25 * 1024 * 1024 * 1024;
 const MAX_CONVERT_REQUEST_BYTES = 2048 * 1024 * 1024;
 const LOCAL_IMAGE_TOKEN_PATTERN = /local-image:\/\/([a-zA-Z0-9-]+)/g;
 const ALLOWED_IMAGE_EXT_PATTERN = /\.(png|jpe?g|gif|webp|svg)$/i;
+const TAB_SPACES = "    ";
 let snippetDetailsIsOpen = readPersistedBoolean(SNIPPET_DETAILS_OPEN_KEY, false);
 
 function readPersistedState() {
@@ -748,7 +749,43 @@ async function handleConvertSubmit(event) {
   }
 }
 
+function handleMarkdownTabKeydown(event) {
+  if (!(markdownInput instanceof HTMLTextAreaElement)) {
+    return;
+  }
+
+  if (
+    event.key !== "Tab" ||
+    event.shiftKey ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.defaultPrevented
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+
+  const selectionStart = markdownInput.selectionStart ?? 0;
+  const selectionEnd = markdownInput.selectionEnd ?? selectionStart;
+  markdownInput.value =
+    markdownInput.value.slice(0, selectionStart) +
+    TAB_SPACES +
+    markdownInput.value.slice(selectionEnd);
+
+  const caretPosition = selectionStart + TAB_SPACES.length;
+  markdownInput.selectionStart = caretPosition;
+  markdownInput.selectionEnd = caretPosition;
+
+  collectFormState();
+}
+
 restoreFormState();
+
+if (markdownInput instanceof HTMLTextAreaElement) {
+  markdownInput.addEventListener("keydown", handleMarkdownTabKeydown);
+}
 
 if (convertForm instanceof HTMLFormElement) {
   convertForm.addEventListener("input", collectFormState);
