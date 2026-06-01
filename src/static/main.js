@@ -8,19 +8,17 @@ const resultContainer = document.getElementById("result");
 const uploadResultContainer = document.getElementById("upload-result");
 
 const PERSISTENCE_KEY = "likha-pdf:form-state:v1";
-const IMAGE_DB_NAME = "likha-pdf:image-db:v1";
-const IMAGE_DB_VERSION = 1;
-const IMAGE_STORE_NAME = "images";
+const SESSION_IMAGE_CACHE_KEY = "likha-pdf:session-images:v1";
 const PDF_FILENAME_KEY = "likha-pdf:last-pdf-filename";
 const SNIPPET_DETAILS_OPEN_KEY = "likha-pdf:snippet-details-open:v1";
-const LOCAL_IMAGE_SCHEME = "local-image://";
+const SESSION_IMAGE_SCHEME = "session-image://";
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
-const MAX_STORAGE_BYTES = 25 * 1024 * 1024 * 1024;
 const MAX_CONVERT_REQUEST_BYTES = 2048 * 1024 * 1024;
-const LOCAL_IMAGE_TOKEN_PATTERN = /local-image:\/\/([a-zA-Z0-9-]+)/g;
 const ALLOWED_IMAGE_EXT_PATTERN = /\.(png|jpe?g|gif|webp|svg)$/i;
 const TAB_SPACES = "    ";
+
 let snippetDetailsIsOpen = readPersistedBoolean(SNIPPET_DETAILS_OPEN_KEY, false);
+let sessionImageCache = readSessionImageCache();
 
 function readPersistedState() {
   try {
@@ -143,10 +141,7 @@ function restoreFormState() {
       continue;
     }
 
-    if (
-      element instanceof HTMLInputElement &&
-      element.type === "checkbox"
-    ) {
+    if (element instanceof HTMLInputElement && element.type === "checkbox") {
       element.checked = Boolean(value);
       continue;
     }
@@ -171,12 +166,12 @@ function setConvertLoadingState(isLoading) {
 function setUploadLoadingState(isLoading) {
   if (uploadButton instanceof HTMLButtonElement) {
     uploadButton.disabled = isLoading;
-    uploadButton.textContent = isLoading ? "preparing..." : "insert image";
+    uploadButton.textContent = isLoading ? "uploading..." : "insert image";
   }
 }
 
 function escapeHtml(value) {
-  return value
+  return String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -184,9 +179,176 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function buildLocalImageSnippet(name, id) {
+function formatBytes(numBytes) {
+  const parsed = Number(numBytes);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return "0 B";
+  }
+
+  if (parsed < 1024) {
+    return `${Math.round(parsed)} B`;
+  }
+
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = parsed;
+  for (const unit of units) {
+    value /= 1024;
+    if (value < 1024) {
+      return `${value.toFixed(2)} ${unit}`;
+    }
+  }
+
+  return `${value.toFixed(2)} PB`;
+}
+
+function buildSessionImageSnippet(name, id) {
   const cleanName = String(name || "image").replace(/[\]\r\n]/g, "");
-  return `![${cleanName}](${LOCAL_IMAGE_SCHEME}${id})`;
+  return `![${cleanName}](${SESSION_IMAGE_SCHEME}${id})`;
+}
+
+function normalizeImageRecord(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const id = typeof raw.id === "string" ? raw.id.trim() : "";
+  if (!id) {
+    return null;
+  }
+
+  const nameValue = typeof raw.name === "string" ? raw.name.trim() : "";
+  const name = nameValue || "image";
+
+  const mimeValue = typeof raw.mimeType === "string" ? raw.mimeType.trim() : "";
+  const mimeType = mimeValue || "application/octet-stream";
+
+  const sizeValue = Number(raw.sizeBytes);
+  const sizeBytes = Number.isFinite(sizeValue) && sizeValue >= 0 ? sizeValue : 0;
+
+  const createdAtValue = Number(raw.createdAt);
+  const createdAt = Number.isFinite(createdAtValue) && createdAtValue > 0
+    ? createdAtValue
+    : Date.now();
+
+  const snippetValue = typeof raw.snippet === "string" ? raw.snippet.trim() : "";
+  const snippet = snippetValue || buildSessionImageSnippet(name, id);
+
+  return {
+    id,
+    name,
+    mimeType,
+    sizeBytes,
+    createdAt,
+    snippet,
+  };
+}
+
+function dedupeImageRecords(records) {
+  const deduped = [];
+  const seen = new Set();
+
+  for (const record of records) {
+    if (!record || seen.has(record.id)) {
+      continue;
+    }
+    seen.add(record.id);
+    deduped.push(record);
+  }
+
+  return deduped;
+}
+
+function sortImageRecordsByCreatedAt(records) {
+  return [...records].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+function toCacheImageRecord(record) {
+  return {
+    id: record.id,
+    name: record.name,
+    mimeType: record.mimeType,
+    sizeBytes: record.sizeBytes,
+    createdAt: record.createdAt,
+    snippet: record.snippet,
+  };
+}
+
+function readSessionImageCache() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_IMAGE_CACHE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    const normalized = parsed
+      .map(normalizeImageRecord)
+      .filter((record) => record !== null);
+
+    return dedupeImageRecords(normalized);
+  } catch {
+    return [];
+  }
+}
+
+function writeSessionImageCache(records) {
+  try {
+    const payload = records.map(toCacheImageRecord);
+    sessionStorage.setItem(SESSION_IMAGE_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore storage write failures in restricted storage contexts
+  }
+}
+
+function setSessionImageCache(records) {
+  const normalized = records
+    .map(normalizeImageRecord)
+    .filter((record) => record !== null);
+
+  sessionImageCache = dedupeImageRecords(normalized);
+  writeSessionImageCache(sessionImageCache);
+}
+
+function getSessionImageCache() {
+  return [...sessionImageCache];
+}
+
+function mergeImageRecordsCachedFirst(cachedRecords, serverRecords) {
+  const normalizedCache = dedupeImageRecords(
+    cachedRecords.map(normalizeImageRecord).filter((record) => record !== null)
+  );
+
+  const normalizedServer = sortImageRecordsByCreatedAt(
+    dedupeImageRecords(
+      serverRecords.map(normalizeImageRecord).filter((record) => record !== null)
+    )
+  );
+
+  const serverById = new Map(normalizedServer.map((record) => [record.id, record]));
+  const mergedCache = normalizedCache.map((cachedRecord) => ({
+    ...(serverById.get(cachedRecord.id) || {}),
+    ...cachedRecord,
+  }));
+
+  const cacheIds = new Set(mergedCache.map((record) => record.id));
+  const serverOnly = normalizedServer.filter((record) => !cacheIds.has(record.id));
+
+  return [...mergedCache, ...serverOnly];
+}
+
+function upsertSessionImageCache(record) {
+  const normalized = normalizeImageRecord(record);
+  if (!normalized) {
+    return null;
+  }
+
+  const withoutRecord = sessionImageCache.filter((entry) => entry.id !== normalized.id);
+  setSessionImageCache([normalized, ...withoutRecord]);
+  return normalized;
 }
 
 function insertSnippetIntoMarkdown(snippet) {
@@ -209,14 +371,6 @@ function isAllowedImageFile(file) {
   return ALLOWED_IMAGE_EXT_PATTERN.test(file.name || "");
 }
 
-function makeImageId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-
-  return `img-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
-}
-
 function randomHex(length = 40) {
   const byteLen = Math.ceil(length / 2);
 
@@ -235,201 +389,12 @@ function randomHex(length = 40) {
   return out.slice(0, length);
 }
 
-function requestToPromise(request) {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("indexeddb request failed"));
-  });
-}
-
-function transactionDone(transaction) {
-  return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () =>
-      reject(transaction.error || new Error("indexeddb transaction failed"));
-    transaction.onabort = () =>
-      reject(transaction.error || new Error("indexeddb transaction aborted"));
-  });
-}
-
-function openImageDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(IMAGE_DB_NAME, IMAGE_DB_VERSION);
-
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(IMAGE_STORE_NAME)) {
-        db.createObjectStore(IMAGE_STORE_NAME, { keyPath: "id" });
-      }
-    };
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("failed to open indexeddb"));
-  });
-}
-
-async function saveImageRecord(record) {
-  const db = await openImageDb();
-
-  try {
-    const transaction = db.transaction(IMAGE_STORE_NAME, "readwrite");
-    transaction.objectStore(IMAGE_STORE_NAME).put(record);
-    await transactionDone(transaction);
-  } finally {
-    db.close();
-  }
-}
-
-async function getImageRecord(imageId) {
-  const db = await openImageDb();
-
-  try {
-    const transaction = db.transaction(IMAGE_STORE_NAME, "readonly");
-    const request = transaction.objectStore(IMAGE_STORE_NAME).get(imageId);
-    const record = await requestToPromise(request);
-    await transactionDone(transaction);
-    return record;
-  } finally {
-    db.close();
-  }
-}
-
-async function getImageUsageStats() {
-  const db = await openImageDb();
-
-  try {
-    const transaction = db.transaction(IMAGE_STORE_NAME, "readonly");
-    const store = transaction.objectStore(IMAGE_STORE_NAME);
-
-    let count = 0;
-    let totalBytes = 0;
-
-    await new Promise((resolve, reject) => {
-      const request = store.openCursor();
-
-      request.onsuccess = () => {
-        const cursor = request.result;
-        if (!cursor) {
-          resolve();
-          return;
-        }
-
-        count += 1;
-        let sizeBytes = Number(cursor.value?.sizeBytes);
-        if (!Number.isFinite(sizeBytes) || sizeBytes < 0) {
-          sizeBytes = Number(cursor.value?.blob?.size) || 0;
-        }
-        totalBytes += sizeBytes;
-        cursor.continue();
-      };
-
-      request.onerror = () => reject(request.error || new Error("failed to read image usage"));
-    });
-
-    await transactionDone(transaction);
-    return { count, totalBytes };
-  } finally {
-    db.close();
-  }
-}
-
-function getUniqueLocalImageIds(markdown) {
-  const ids = new Set();
-  let match = null;
-
-  while ((match = LOCAL_IMAGE_TOKEN_PATTERN.exec(markdown)) !== null) {
-    const imageId = match[1];
-    if (imageId) {
-      ids.add(imageId);
-    }
-  }
-
-  LOCAL_IMAGE_TOKEN_PATTERN.lastIndex = 0;
-  return Array.from(ids);
-}
-
-function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(reader.error || new Error("failed to read image data"));
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function resolveLocalImageTokens(markdown) {
-  const ids = getUniqueLocalImageIds(markdown);
-  if (ids.length === 0) {
-    return { resolvedMarkdown: markdown, missingIds: [] };
-  }
-
-  let resolvedMarkdown = markdown;
-  const missingIds = [];
-
-  for (const imageId of ids) {
-    const record = await getImageRecord(imageId);
-    if (!record || !(record.blob instanceof Blob)) {
-      missingIds.push(imageId);
-      continue;
-    }
-
-    const dataUrl = await blobToDataUrl(record.blob);
-    resolvedMarkdown = resolvedMarkdown
-      .split(`${LOCAL_IMAGE_SCHEME}${imageId}`)
-      .join(dataUrl);
-  }
-
-  return { resolvedMarkdown, missingIds };
-}
-
-async function getImageSnippetHistory() {
-  const db = await openImageDb();
-
-  try {
-    const transaction = db.transaction(IMAGE_STORE_NAME, "readonly");
-    const store = transaction.objectStore(IMAGE_STORE_NAME);
-    const snippets = [];
-
-    await new Promise((resolve, reject) => {
-      const request = store.openCursor();
-
-      request.onsuccess = () => {
-        const cursor = request.result;
-        if (!cursor) {
-          resolve();
-          return;
-        }
-
-        const value = cursor.value || {};
-        const id = typeof value.id === "string" ? value.id : "";
-        if (id) {
-          snippets.push({
-            createdAt: Number(value.createdAt) || 0,
-            snippet: buildLocalImageSnippet(value.name, id),
-          });
-        }
-
-        cursor.continue();
-      };
-
-      request.onerror = () =>
-        reject(request.error || new Error("failed to read image snippet history"));
-    });
-
-    await transactionDone(transaction);
-    snippets.sort((a, b) => b.createdAt - a.createdAt);
-    return snippets.map((entry) => entry.snippet);
-  } finally {
-    db.close();
-  }
-}
-
-function renderSnippetHistory(snippets, heading = "", message = "") {
+function renderSnippetHistory(records, heading = "", message = "") {
   if (!(uploadResultContainer instanceof HTMLElement)) {
     return;
   }
 
-  if (snippets.length === 0 && !heading && !message) {
+  if (records.length === 0 && !heading && !message) {
     uploadResultContainer.innerHTML = "";
     return;
   }
@@ -438,20 +403,30 @@ function renderSnippetHistory(snippets, heading = "", message = "") {
   const messageHtml = message ? `<p>${escapeHtml(message)}</p>` : "";
 
   let detailsHtml = "";
-  if (snippets.length > 0) {
+  if (records.length > 0) {
     const openAttr = snippetDetailsIsOpen ? " open" : "";
-    const snippetItems = snippets
-      .map(
-        (snippet) =>
-          `<li style="all: revert;"><code style="all: revert;">${escapeHtml(snippet)}</code></li>`
-      )
+    const detailsItems = records
+      .map((record) => {
+        const sizeText = formatBytes(record.sizeBytes);
+        return `
+          <li style="all: revert; margin-bottom: 0.6em;">
+            <div style="all: revert;">
+              <strong style="all: revert;">${escapeHtml(record.name)}</strong>
+              <small style="all: revert; color: #555;">${escapeHtml(sizeText)}</small>
+            </div>
+            <code style="all: revert; display: inline-block; margin-top: 0.2em;">${escapeHtml(record.snippet)}</code>
+          </li>
+        `;
+      })
       .join("");
+
     detailsHtml = `
       <br>
       <details style="all: revert;" data-snippet-history="true"${openAttr}>
-        <summary style="all: revert; cursor: pointer;">images (${snippets.length})</summary>
-        <ol style="all: revert;">${snippetItems}</ol>
-      </details><br>
+        <summary style="all: revert; cursor: pointer;">images (${records.length})</summary>
+        <ol style="all: revert;">${detailsItems}</ol>
+      </details>
+      <br>
     `;
   }
 
@@ -473,12 +448,70 @@ function renderSnippetHistory(snippets, heading = "", message = "") {
   }
 }
 
-async function refreshSnippetHistory(heading = "", message = "") {
+async function readApiError(response, fallbackMessage) {
+  const fallback = String(fallbackMessage || "request failed.");
+  const contentType = (response.headers.get("content-type") || "").toLowerCase();
+
+  if (contentType.includes("application/json")) {
+    try {
+      const payload = await response.json();
+      const errorText = payload && typeof payload.error === "string" ? payload.error : "";
+      if (errorText.trim()) {
+        return errorText.trim();
+      }
+    } catch {
+      // ignore json parse failures
+    }
+    return fallback;
+  }
+
   try {
-    const snippets = await getImageSnippetHistory();
-    renderSnippetHistory(snippets, heading, message);
+    const text = (await response.text()).trim();
+    if (text) {
+      return text.slice(0, 1200);
+    }
   } catch {
-    renderSnippetHistory([], "image upload failed", "unable to load image snippet history.");
+    // ignore body read failures
+  }
+
+  return fallback;
+}
+
+async function syncSessionImageCacheFromServer() {
+  const response = await fetch("/session-images", {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await readApiError(response, `failed to load session images (${response.status}).`)
+    );
+  }
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  const serverRecordsRaw = Array.isArray(payload?.images) ? payload.images : [];
+  const merged = mergeImageRecordsCachedFirst(getSessionImageCache(), serverRecordsRaw);
+  setSessionImageCache(merged);
+  return getSessionImageCache();
+}
+
+async function refreshSnippetHistory(heading = "", message = "") {
+  renderSnippetHistory(getSessionImageCache(), heading, message);
+
+  try {
+    const mergedRecords = await syncSessionImageCacheFromServer();
+    renderSnippetHistory(mergedRecords, heading, message);
+  } catch {
+    // keep the cache view when server sync fails
   }
 }
 
@@ -487,8 +520,7 @@ function showUploadError(message) {
 }
 
 async function showUploadResult(record) {
-  const snippet = buildLocalImageSnippet(record.name, record.id);
-  insertSnippetIntoMarkdown(snippet);
+  insertSnippetIntoMarkdown(record.snippet);
   await refreshSnippetHistory("image inserted", record.name || "image");
 }
 
@@ -516,23 +548,35 @@ async function handleInsertImage() {
   setUploadLoadingState(true);
 
   try {
-    const { totalBytes } = await getImageUsageStats();
-    if (totalBytes + file.size > MAX_STORAGE_BYTES) {
-      showUploadError("image upload limit reached. maximum total image capacity is 25GB.");
+    const uploadFormData = new FormData();
+    uploadFormData.set("image", file, file.name || "image");
+
+    const response = await fetch("/upload-image", {
+      method: "POST",
+      body: uploadFormData,
+    });
+
+    if (!response.ok) {
+      showUploadError(
+        await readApiError(response, `image upload failed (${response.status}).`)
+      );
       return;
     }
 
-    const record = {
-      id: makeImageId(),
-      name: file.name || "image",
-      mimeType: file.type || "application/octet-stream",
-      sizeBytes: file.size,
-      createdAt: Date.now(),
-      blob: file,
-    };
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
 
-    await saveImageRecord(record);
-    await showUploadResult(record);
+    const uploadedRecord = upsertSessionImageCache(payload?.image || null);
+    if (!uploadedRecord) {
+      showUploadError("image upload failed.");
+      return;
+    }
+
+    await showUploadResult(uploadedRecord);
     imageInput.value = "";
   } catch (error) {
     const message =
@@ -698,26 +742,18 @@ async function handleConvertSubmit(event) {
     return;
   }
 
+  const markdownBytes = new Blob([markdown]).size;
+  if (markdownBytes > MAX_CONVERT_REQUEST_BYTES) {
+    showConvertError(
+      "markdown is too large to send for conversion. reduce image usage or increase server limits."
+    );
+    return;
+  }
+
   setConvertLoadingState(true);
   prepareForPdfRegeneration();
 
   try {
-    const { resolvedMarkdown, missingIds } = await resolveLocalImageTokens(markdown);
-    if (missingIds.length > 0) {
-      showConvertError("one or more local images are missing from browser storage.");
-      return;
-    }
-
-    const markdownBytes = new Blob([resolvedMarkdown]).size;
-    if (markdownBytes > MAX_CONVERT_REQUEST_BYTES) {
-      showConvertError(
-        "resolved markdown is too large to send for conversion. reduce inserted images or set a higher MAX_CONTENT_LENGTH on the server."
-      );
-      return;
-    }
-
-    formData.set("markdown", resolvedMarkdown);
-
     const response = await fetch("/convert", {
       method: "POST",
       body: formData,
@@ -802,4 +838,3 @@ if (uploadButton instanceof HTMLButtonElement) {
 }
 
 void refreshSnippetHistory();
-

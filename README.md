@@ -7,7 +7,6 @@ a simple web app that converts markdown to pdf.
 ## features
 
 - markdown to pdf export
-- local browser image storage with markdown snippet insertion
 - paper size, margin, font, line spacing, and page number options
 - syntax-highlighted code blocks
 - always produces a pdf (reportlab fallback if weasyprint fails)
@@ -20,8 +19,8 @@ a simple web app that converts markdown to pdf.
 
 ## image usage
 
-1. store an image locally from the page
-2. click `insert into markdown`
+1. upload an image from the page (stored on the server for your current browser session)
+2. click `insert image` to add a `session-image://...` markdown token
 3. generate pdf
 
 
