@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>likha-pdf</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/kj-sh604/noir.css@latest/out/noir.min.css" />
+</head>
+<body>
+  <main>
+    <h1>likha-pdf</h1>
+    <p>this project is dead.</p>
+    <p>
+      i made this for personal use, but i no longer need it.
+      i just run the following <code>markdown-convert</code> python snippet locally and that covers everything i need.
+    </p>
+
+    <h2>local replacement</h2>
+    <pre><code>import sys
+from markdown_convert.__main__ import main
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(main())</code></pre>
+
+    <h2>dependencies</h2>
+    <ul>
+      <li>argsdict</li>
+      <li>beautifulsoup4</li>
+      <li>duckdb</li>
+      <li>greenlet</li>
+      <li>install-playwright</li>
+      <li>latex2mathml</li>
+      <li>lxml</li>
+      <li>markdown-it-py</li>
+      <li>markdown_convert</li>
+      <li>mdit-py-plugins</li>
+      <li>mdurl</li>
+      <li>numpy</li>
+      <li>pandas</li>
+      <li>playwright</li>
+      <li>pyee</li>
+      <li>Pygments</li>
+      <li>python-dateutil</li>
+      <li>ruamel.yaml</li>
+      <li>schemdraw</li>
+      <li>six</li>
+      <li>soupsieve</li>
+      <li>string_grab</li>
+      <li>typing_extensions</li>
+      <li>vl-convert-python</li>
+      <li>yaml-to-schemdraw</li>
+    </ul>
+  </main>
+</body>
+</html>
